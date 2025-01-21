@@ -1,0 +1,1 @@
+print match 10 { 10 => "OK" };
