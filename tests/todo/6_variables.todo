@@ -1,0 +1,8 @@
+var imAVariable = "here is my value";
+var iAmNil;
+
+assert imAVariable == "here is my value";
+assert iAmNil == nil;
+
+print "OK";
+

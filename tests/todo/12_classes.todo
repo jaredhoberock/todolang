@@ -1,0 +1,143 @@
+{
+  class Breakfast {
+    fun cook() {
+      print "Eggs a-fryin'!";
+    }
+  
+    fun serve(who) {
+      print "Enjoy your breakfast, " + who + ".";
+    }
+  }
+}
+
+{
+  class DevonshireCream {
+    fun serveOn() {
+      return "Scones";
+    }
+  }
+
+  print DevonshireCream;
+}
+
+{
+  class Bagel {}
+  var bagel = Bagel();
+  print bagel;
+}
+
+{
+  class Box {}
+
+  fun notMethod(argument) {
+    print "called function with " + argument;
+  }
+
+  var box = Box();
+  box.function = notMethod;
+  box.function("argument");
+}
+
+{
+  class Bacon {
+    fun eat() {
+      print "Crunch crunch crunch!";
+    }
+  }
+
+  Bacon().eat();
+}
+
+{
+  class Egotist {
+    fun speak() {
+      print this;
+    }
+  }
+
+  var method = Egotist().speak;
+  method();
+}
+
+{
+  class Cake {
+    fun taste() {
+      var adjective = "delicious";
+      print "The " + this.flavor + " cake is " + adjective + "!";
+    }
+  }
+
+  var cake = Cake();
+  cake.flavor = "German chocolate";
+  cake.taste(); // Prints "The German chocolate cake is delicious!".
+}
+
+{
+  class Thing {
+    fun getCallback() {
+      fun localFunction() {
+        print this;
+      }
+
+      return localFunction;
+    }
+  }
+
+  var callback = Thing().getCallback();
+  callback();
+}
+
+{
+  class Person {
+    fun sayName() {
+      print this.name;
+    }
+  }
+  
+  var jane = Person();
+  jane.name = "Jane";
+  
+  var method = jane.sayName;
+  method();
+}
+
+{
+  class Person {
+    fun sayName() {
+      print this.name;
+    }
+  }
+
+  var jane = Person();
+  jane.name = "Jane";
+
+  var bill = Person();
+  bill.name = "Bill";
+
+  bill.sayName = jane.sayName;
+  bill.sayName();
+}
+
+{
+  class Foo {
+    fun init() {
+      print this;
+    }
+  }
+
+  var foo = Foo();
+  print foo.init();
+}
+
+{
+  class Bar {
+    fun init() {
+      return;
+    }
+  }
+
+  var bar = Bar();
+  print bar.init();
+}
+
+print "OK";

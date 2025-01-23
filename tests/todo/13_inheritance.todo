@@ -1,0 +1,52 @@
+{
+  class Doughnut {
+    fun cook() {
+      print "Fry until golden brown.";
+    }
+  }
+  
+  class BostonCreme < Doughnut {}
+  
+  BostonCreme().cook();
+}
+
+{
+  class Doughnut {
+    fun cook() {
+      print "Fry until golden brown.";
+    }
+  }
+  
+  class BostonCreme < Doughnut {
+    fun cook() {
+      super.cook();
+      print "Pipe full of custard and coat with chocolate.";
+    }
+  }
+  
+  BostonCreme().cook();
+}
+
+{
+  class A {
+    fun method() {
+      print "A method";
+    }
+  }
+
+  class B < A {
+    fun method() {
+      print "B method";
+    }
+
+    fun test() {
+      super.method();
+    }
+  }
+
+  class C < B {}
+
+  C().test();
+}
+
+print "OK";

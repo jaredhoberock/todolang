@@ -1,0 +1,8 @@
+print clock;
+var started = clock();
+var now = clock();
+assert now >= started;
+var elapsed = now - started;
+assert elapsed <= started;
+assert elapsed <= now;
+print "OK";

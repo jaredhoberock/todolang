@@ -1,0 +1,6 @@
+assert 1 + 2 == 3;
+assert 1 - 2 == -1;
+assert 3 * 4 == 12;
+assert 15 / 5 == 3;
+
+print "OK";

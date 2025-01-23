@@ -1,0 +1,8 @@
+assert !!true;
+assert !false;
+assert !(true and false);
+assert true and true;
+assert !(false or false);
+assert true or false;
+
+print "OK";

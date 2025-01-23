@@ -1,0 +1,13 @@
+fun f1(n) {
+  if (n == 0) return n;
+  return n + 1;
+}
+
+fun f2(n) {
+  if (n == 0) return n + 1;
+  else return n;
+}
+
+assert 0 == f1(0);
+assert 1 == f2(0);
+print "OK";

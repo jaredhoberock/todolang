@@ -1,0 +1,8 @@
+fun function(first, second)
+{
+  return first + second;
+}
+
+assert function(1,2) == 3;
+
+print "OK";

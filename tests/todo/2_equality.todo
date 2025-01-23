@@ -1,0 +1,6 @@
+assert !(1 == 2);
+assert "cat" != "dog";
+assert !(314 == "pi");
+assert !(123 == "123");
+
+print "OK";
