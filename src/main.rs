@@ -2,12 +2,35 @@ use std::io::Write;
 
 use todolang::interpreter::Interpreter;
 use todolang::lexer::Lexer;
-use todolang::parser::parse_program;
+use todolang::parser::{parse_program, ParseError};
 use todolang::source_location::SourceRange;
 use todolang::token::{Token, TokenKind};
 
 fn usage() {
     println!("usage: todolang [script]");
+}
+
+fn report_syntax_error(error: &ParseError, source: &str) -> () {
+    eprintln!("Syntax error: {}", error);
+    match &error.error_token {
+        Some(token) => {
+            let range = SourceRange::line_of(source, &token.location);
+            let source_line = range.as_str(source);
+
+            // print the line number and corresponding source line
+            eprintln!("{:>4} | {}", range.line(), source_line);
+
+            // if we have encountered EOF, point at one position past the end of the line
+            let column = if token.kind == TokenKind::Eof {
+                source_line.len()
+            } else {
+                token.location.column
+            };
+
+            eprintln!("     | {}^", " ".repeat(column));
+        }
+        _ => (),
+    }
 }
 
 fn interpret(interp: &mut Interpreter, source: &str) -> bool {
@@ -16,26 +39,7 @@ fn interpret(interp: &mut Interpreter, source: &str) -> bool {
     let prog = match parse_program(&tokens) {
         Ok(prog) => prog,
         Err(error) => {
-            eprintln!("Syntax error: {}", error);
-            match &error.error_token {
-                Some(token) => {
-                    let range = SourceRange::line_of(source, &token.location);
-                    let source_line = range.as_str(source);
-
-                    // print the line number and corresponding source line
-                    eprintln!("{:>4} | {}", range.line(), source_line);
-
-                    // if we have encountered EOF, point at one position past the end of the line
-                    let column = if token.kind == TokenKind::Eof {
-                        source_line.len()
-                    } else {
-                        token.location.column
-                    };
-
-                    eprintln!("     | {}^", " ".repeat(column));
-                }
-                _ => (),
-            };
+            report_syntax_error(&error, source);
             return false;
         }
     };
