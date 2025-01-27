@@ -1,9 +1,11 @@
+use std::cell::RefCell;
 use std::io::Write;
 
 use todolang::interpreter::Interpreter;
 use todolang::lexer::Lexer;
-use todolang::parser::{parse_program, ParseError};
+use todolang::parser::{parse_global_statement_or_eof, parse_program, ParseError};
 use todolang::source_location::SourceRange;
+use todolang::syntax::{Program, Statement};
 use todolang::token::{Token, TokenKind};
 
 fn usage() {
@@ -33,7 +35,7 @@ fn report_syntax_error(error: &ParseError, source: &str) -> () {
     }
 }
 
-fn interpret(interp: &mut Interpreter, source: &str) -> bool {
+fn interpret(source: &str) -> bool {
     let tokens: Vec<Token> = Lexer::new(source).collect();
 
     let prog = match parse_program(&tokens) {
@@ -43,6 +45,8 @@ fn interpret(interp: &mut Interpreter, source: &str) -> bool {
             return false;
         }
     };
+
+    let mut interp = Interpreter::new();
 
     match interp.interpret_program(&prog) {
         Ok(_) => true,
@@ -56,8 +60,7 @@ fn interpret(interp: &mut Interpreter, source: &str) -> bool {
 fn interpret_from_file(filename: &str) -> bool {
     match std::fs::read_to_string(filename) {
         Ok(source) => {
-            let mut interp = Interpreter::new();
-            interpret(&mut interp, &source)
+            interpret(&source)
         }
         Err(error) => {
             eprintln!("Error reading file: {}", error);
@@ -66,10 +69,46 @@ fn interpret_from_file(filename: &str) -> bool {
     }
 }
 
+fn evaluate_global_statement<'ast>(interp: &mut Interpreter<'ast>, prog: &'ast RefCell<Program>, source: &str) -> bool {
+    let tokens: Vec<Token> = Lexer::new(source).collect();
+
+    // try to parse the next statement
+    match parse_global_statement_or_eof(&tokens) {
+        Ok(Some(stmt)) => { prog.borrow_mut().statements.push(stmt); },
+        Ok(None) => { return true; } // EOF
+        Err(error) => {
+            report_syntax_error(&error, source);
+            return false;
+        }
+    }
+
+    // SAFETY: launder the parsed statement's lifetime
+    let stmt: &'ast Statement = unsafe {
+        let borrow = prog.borrow();
+
+        // get the last statement
+        let stmt_ref = borrow.statements.last().unwrap();
+
+        // coerce the reference to have the 'ast lifetime
+        &*(stmt_ref as *const Statement)
+    };
+
+    // the last statement of prog is the new statement to interpret
+    match interp.interpret_global_statement(stmt) {
+        Ok(_) => true,
+        Err(error) => {
+            eprintln!("Runtime error: {}", error);
+            false
+        }
+    }
+}
+
 fn interpret_from_prompt() -> bool {
+    let prog = RefCell::new(Program::new());
     let mut interp = Interpreter::new();
-    let stdin = std::io::stdin();
     let mut input = String::new();
+
+    let stdin = std::io::stdin();
 
     loop {
         print!("> ");
@@ -80,7 +119,7 @@ fn interpret_from_prompt() -> bool {
 
         match stdin.read_line(&mut input) {
             Ok(0) => return true, // EOF
-            Ok(_) => interpret(&mut interp, &input),
+            Ok(_) => evaluate_global_statement(&mut interp, &prog, &input),
             Err(error) => {
                 eprintln!("Error reading line: {}", error);
                 return false;

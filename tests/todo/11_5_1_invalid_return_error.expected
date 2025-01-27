@@ -1,1 +1,1 @@
-Runtime error: Can't return from top-level code.
+Runtime error: Cannot return from outside of a function.

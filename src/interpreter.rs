@@ -4,7 +4,7 @@ use std::ops::ControlFlow;
 use std::rc::Rc;
 use std::rc::Weak;
 
-use crate::name_resolver::NameResolver;
+use crate::semantic_analyzer::SemanticAnalyzer;
 use crate::syntax::*;
 use crate::token::*;
 
@@ -401,7 +401,7 @@ impl UserFunction {
 
         // bind arguments to parameters
         for (param, arg) in self.decl().parameters.iter().zip(args.iter()) {
-            env.borrow_mut().define(&param.lexeme, arg)?;
+            env.borrow_mut().define(&param.name.lexeme, arg)?;
         }
 
         interpreter.with_environment(env, |interpreter| {
@@ -446,12 +446,12 @@ impl UserFunction {
     }
 }
 
-pub struct Interpreter {
+pub struct Interpreter<'ast> {
+    sema: SemanticAnalyzer<'ast>,
     current_environment: Shared<Environment>,
-    name_resolver: NameResolver,
 }
 
-impl Interpreter {
+impl<'ast> Interpreter<'ast> {
     fn initial_global_values() -> HashMap<String, Value> {
         let program_started = std::time::SystemTime::now();
 
@@ -473,15 +473,15 @@ impl Interpreter {
 
     pub fn new() -> Self {
         let env = Environment::new_shared_with_initial_values(Self::initial_global_values());
-        let initial_names = env
+        let initial_names: Vec<_> = env
             .borrow()
             .local_names()
             .into_iter()
             .map(|name| name.to_string())
             .collect();
         Self {
+            sema: SemanticAnalyzer::new(initial_names.clone()),
             current_environment: env,
-            name_resolver: NameResolver::new(initial_names),
         }
     }
 
@@ -635,24 +635,15 @@ impl Interpreter {
         }
     }
 
-    fn interpret_name_with_ancestor(&mut self, name: &Token) -> Result<(Value, usize), String> {
-        let ancestor = self.name_resolver.lookup(&name)?;
-        let result = self
-            .current_environment
-            .borrow()
-            .get_from_ancestor(ancestor, &name.lexeme)?;
-        Ok((result, ancestor))
-    }
-
-    fn interpret_name(&mut self, name: &Token) -> Result<Value, String> {
-        self.interpret_name_with_ancestor(name)
-            .map(|(result, _)| result)
-    }
-
     fn interpret_super_expression(&mut self, expr: &SuperExpression) -> Result<Value, String> {
         // look up the value of "super" and get which ancestor we found it in
-        let (superclass, ancestor) = match self.interpret_name_with_ancestor(&expr.keyword)? {
-            (Value::Callable(Callable::Class(c)), a) => (c, a),
+        let ancestor = self.sema.super_scope_distance(expr)?;
+        let superclass = match self
+            .current_environment
+            .borrow()
+            .get_from_ancestor(ancestor, "super")
+        {
+            Ok(Value::Callable(Callable::Class(c))) => c,
             _ => unreachable!("'super' should evaluate to a class."),
         };
         // look up the value of "this" at one scope below where we found "super"
@@ -671,8 +662,11 @@ impl Interpreter {
             .map(|m| Value::Callable(Callable::User(m)))
     }
 
-    fn interpret_this_expression(&mut self, expr: &ThisExpression) -> Result<Value, String> {
-        self.interpret_name(&expr.keyword)
+    fn interpret_this_expression(&mut self, this: &ThisExpression) -> Result<Value, String> {
+        let ancestor = self.sema.this_scope_distance(this)?;
+        self.current_environment
+            .borrow()
+            .get_from_ancestor(ancestor, "this")
     }
 
     fn interpret_unary_expression(&mut self, expr: &UnaryExpression) -> Result<Value, String> {
@@ -685,7 +679,10 @@ impl Interpreter {
     }
 
     fn interpret_variable(&mut self, var: &Variable) -> Result<Value, String> {
-        self.interpret_name(&var.name)
+        let ancestor = self.sema.variable_scope_distance(var)?;
+        self.current_environment
+            .borrow()
+            .get_from_ancestor(ancestor, &var.name.lexeme)
     }
 
     fn interpret_assignment_expression(
@@ -693,7 +690,7 @@ impl Interpreter {
         expr: &AssignmentExpression,
     ) -> Result<Value, String> {
         let value = self.interpret_expression(&*expr.expr)?;
-        let ancestor = self.name_resolver.lookup(&expr.var.name)?;
+        let ancestor = self.sema.variable_scope_distance(&expr.var)?;
         self.current_environment.borrow_mut().set_in_ancestor(
             ancestor,
             &expr.var.name.lexeme,
@@ -723,9 +720,16 @@ impl Interpreter {
     fn interpret_class_declaration(&mut self, decl: &ClassDeclaration) -> Result<(), String> {
         // get superclass if one is specified
         let superclass = match &decl.superclass {
-            Some(name) => match self.interpret_name(name)? {
-                Value::Callable(Callable::Class(c)) => Some(c.clone()),
-                _ => return Err("Superclass must be a class.".to_string()),
+            Some(superclassname) => {
+                let ancestor = self.sema.superclass_scope_distance(decl)?;
+                match self
+                    .current_environment
+                    .borrow()
+                    .get_from_ancestor(ancestor, &superclassname.lexeme)?
+                {
+                    Value::Callable(Callable::Class(c)) => Some(c.clone()),
+                    _ => return Err("Superclass must be a class.".to_string()),
+                }
             },
             None => None,
         };
@@ -935,13 +939,17 @@ impl Interpreter {
         }
     }
 
-    pub fn interpret_program(&mut self, prog: &Program) -> Result<(), String> {
-        // first do name resolution
-        self.name_resolver.resolve_program(&prog)?;
-
+    pub fn interpret_program(&mut self, prog: &'ast Program) -> Result<(), String> {
+        self.sema.analyze_program(prog)?;
         for stmt in &prog.statements {
             self.interpret_statement(stmt)?;
         }
+        Ok(())
+    }
+
+    pub fn interpret_global_statement(&mut self, stmt: &'ast Statement) -> Result<(), String> {
+        self.sema.analyze_global_statement(stmt)?;
+        self.interpret_statement(stmt)?;
         Ok(())
     }
 }

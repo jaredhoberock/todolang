@@ -601,14 +601,20 @@ impl<'a> Parser<'a> {
         Err(ParseError::combine(errors))
     }
 
-    // parameters := identifier ( "," identifier )*
+    // parameter := identifier
     #[restore_self_on_err]
-    fn parameters(&mut self) -> Result<Vec<Token>, ParseError> {
-        let mut params = vec![self.identifier()?];
+    fn parameter(&mut self) -> Result<ParameterDeclaration, ParseError> {
+        Ok(ParameterDeclaration { name: self.identifier()?})
+    }
+
+    // parameters := parameter ( "," parameter )*
+    #[restore_self_on_err]
+    fn parameters(&mut self) -> Result<Vec<ParameterDeclaration>, ParseError> {
+        let mut params = vec![self.parameter()?];
 
         while self.token(TokenKind::Comma).is_ok() {
             let param = self
-                .identifier()
+                .parameter()
                 .map_err(ParseError::format_message("{} in function parameter list"))?;
             params.push(param);
         }
@@ -919,21 +925,22 @@ impl<'a> Parser<'a> {
         Err(ParseError::combine(errors))
     }
 
+    // XXX note that this allows return statements at global scope
+    #[restore_self_on_err]
+    fn global_statement_or_eof(&mut self) -> Result<Option<Statement>, ParseError> {
+        if self.token(TokenKind::Eof).is_ok() {
+            return Ok(None);
+        }
+        Ok(Some(self.statement()?))
+    }
+
     // program := statement* EOF
-    // XXX note that this allows return statements at top-level
     #[restore_self_on_err]
     fn program(&mut self) -> Result<Program, ParseError> {
         let mut stmts = Vec::new();
 
-        loop {
-            if self.token(TokenKind::Eof).is_ok() {
-                break;
-            }
-
-            match self.statement() {
-                Ok(stmt) => stmts.push(stmt),
-                Err(error) => return Err(error),
-            }
+        while let Some(stmt) = self.global_statement_or_eof()? {
+            stmts.push(stmt);
         }
 
         Ok(Program { statements: stmts })
@@ -943,4 +950,9 @@ impl<'a> Parser<'a> {
 pub fn parse_program(tokens: &[Token]) -> Result<Program, ParseError> {
     let mut parser = Parser::new(tokens);
     parser.program()
+}
+
+pub fn parse_global_statement_or_eof(tokens: &[Token]) -> Result<Option<Statement>, ParseError> {
+    let mut parser = Parser::new(tokens);
+    parser.global_statement_or_eof()
 }

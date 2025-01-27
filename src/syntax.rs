@@ -121,9 +121,14 @@ pub struct ClassDeclaration {
 }
 
 #[derive(Debug)]
+pub struct ParameterDeclaration {
+    pub name: Token,
+}
+
+#[derive(Debug)]
 pub struct FunctionDeclaration {
     pub name: Token,
-    pub parameters: Vec<Token>,
+    pub parameters: Vec<ParameterDeclaration>,
     pub body: BlockStatement,
 }
 
@@ -202,4 +207,12 @@ pub enum Statement {
 #[derive(Debug)]
 pub struct Program {
     pub statements: Vec<Statement>,
+}
+
+impl Program {
+    pub fn new() -> Self {
+        Self {
+            statements: Vec::new(),
+        }
+    }
 }
