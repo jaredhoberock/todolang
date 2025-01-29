@@ -3,6 +3,8 @@ use std::ptr::NonNull;
 
 use crate::syntax::*;
 
+// XXX we need to scrub the ast lifetime from this file
+
 #[derive(Copy, Clone)]
 enum DeclRef<'ast> {
     BuiltinFunction,
@@ -12,73 +14,110 @@ enum DeclRef<'ast> {
     Variable,
 }
 
+struct SymbolTableEntry<'ast> {
+    decl: DeclRef<'ast>,
+    scope_distance: usize,
+}
+
+#[derive(Eq, Hash, PartialEq)]
+enum Symbol {
+    Subclass(NonNull<ClassDeclaration>),
+    Super(NonNull<SuperExpression>),
+    This(NonNull<ThisExpression>),
+    Variable(NonNull<Variable>),
+}
+
+impl Symbol {
+    pub fn from_super(super_: &SuperExpression) -> Self {
+        Self::Super(NonNull::from(super_))
+    }
+
+    pub fn from_subclass(subclass: &ClassDeclaration) -> Self {
+        Self::Subclass(NonNull::from(subclass))
+    }
+
+    pub fn from_this(this: &ThisExpression) -> Self {
+        Self::This(NonNull::from(this))
+    }
+
+    pub fn from_variable(var: &Variable) -> Self {
+        Self::Variable(NonNull::from(var))
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Symbol::Subclass(subclass) => unsafe { &subclass.as_ref().name.lexeme},
+            Symbol::Super(_) => "super",
+            Symbol::This(_) => "this",
+            Symbol::Variable(var) => unsafe { &var.as_ref().name.lexeme},
+        }
+    }
+}
+
 struct SymbolTable<'ast> {
-    // superclasses maps a ClassDeclaration to the pair (ClassDeclaration, scope_distance)
-    // the to ClassDeclaration is the superclass of the from ClassDeclaration
-    superclasses: HashMap<NonNull<ClassDeclaration>, (&'ast ClassDeclaration, usize)>,
-
-    // supers maps a SuperExpression to the pair (ClassDeclaration, scope_distance)
-    supers: HashMap<NonNull<SuperExpression>, (&'ast ClassDeclaration, usize)>,
-
-    // these maps a ThisExpression to the pair (ClassDeclaration, scope_distance)
-    these: HashMap<NonNull<ThisExpression>, (&'ast ClassDeclaration, usize)>,
-
-    // variables maps a Variable to the pair (declaration, scope_distance)
-    variables: HashMap<NonNull<Variable>, (DeclRef<'ast>, usize)>,
+    symbols: HashMap<Symbol, SymbolTableEntry<'ast>>,
 }
 
 impl<'ast> SymbolTable<'ast> {
     pub fn new() -> Self {
         Self { 
-            superclasses: HashMap::new(), 
-            supers: HashMap::new(), 
-            these: HashMap::new(),
-            variables: HashMap::new()
+            symbols: HashMap::new(),
         }
     }
 
     pub fn insert_superclass(&mut self, subclass: &'ast ClassDeclaration, superclass: &'ast ClassDeclaration, scope_distance: usize) {
-        self.superclasses.insert(NonNull::from(subclass), (superclass, scope_distance));
+        let entry = SymbolTableEntry{ decl: DeclRef::Class(superclass), scope_distance };
+        self.symbols.insert(Symbol::Subclass(NonNull::from(subclass)), entry);
     }
 
     pub fn insert_super(&mut self, super_: &'ast SuperExpression, decl: &'ast ClassDeclaration, scope_distance: usize) {
-        self.supers.insert(NonNull::from(super_), (decl, scope_distance));
+        let entry = SymbolTableEntry{ decl: DeclRef::Class(decl), scope_distance };
+        self.symbols.insert(Symbol::Super(NonNull::from(super_)), entry);
     }
 
     pub fn insert_this(&mut self, this: &'ast ThisExpression, decl: &'ast ClassDeclaration, scope_distance: usize) {
-        self.these.insert(NonNull::from(this), (decl, scope_distance));
+        let entry = SymbolTableEntry { decl: DeclRef::Class(decl), scope_distance };
+        self.symbols.insert(Symbol::This(NonNull::from(this)), entry);
     }
 
     pub fn insert_variable(&mut self, var: &'ast Variable, decl: DeclRef<'ast>, scope_distance: usize) {
-        self.variables.insert(NonNull::from(var), (decl, scope_distance));
+        let entry = SymbolTableEntry { decl, scope_distance };
+        self.symbols.insert(Symbol::Variable(NonNull::from(var)), entry);
     }
 
-    pub fn lookup_superclass(&self, subclass: &'ast ClassDeclaration) -> Result<(&'ast ClassDeclaration, usize), String> {
-        self.superclasses
-            .get(&NonNull::from(subclass))
-            .copied()
-            .ok_or(format!("Internal error: superclass of '{}' was not found in symbol table", &subclass.name.lexeme))
+    fn get(&self, symbol: Symbol) -> Result<&SymbolTableEntry<'ast>, String> {
+        self.symbols
+            .get(&symbol)
+            .ok_or(format!("Internal error: '{}' was not found in symbol table", symbol.name()))
     }
 
-    pub fn lookup_super(&self, super_: &'ast SuperExpression) -> Result<(&'ast ClassDeclaration, usize), String> {
-        self.supers
-            .get(&NonNull::from(super_))
-            .copied()
-            .ok_or(format!("Internal error: '{}' was not found in symbol table", "super"))
+    pub fn get_superclass(&self, subclass: &'ast ClassDeclaration) -> Result<(&'ast ClassDeclaration, usize), String> {
+        let entry = self.get(Symbol::from_subclass(subclass))?;
+        match entry.decl {
+            DeclRef::Class(superclass) => Ok((superclass, entry.scope_distance)),
+            _ => Err("Internal error: super class mapped to non-class declaration".to_string()),
+        }
     }
 
-    pub fn lookup_this(&self, this: &'ast ThisExpression) -> Result<(&'ast ClassDeclaration, usize), String> {
-        self.these
-            .get(&NonNull::from(this))
-            .copied()
-            .ok_or(format!("Internal error: '{}' was not found in symbol table", "this"))
+    pub fn get_super(&self, super_: &'ast SuperExpression) -> Result<(&'ast ClassDeclaration, usize), String> {
+        let entry = self.get(Symbol::from_super(super_))?;
+        match entry.decl {
+            DeclRef::Class(class) => Ok((class, entry.scope_distance)),
+            _ => Err("Internal error: super expression mapped to non-class declaration".to_string()),
+        }
     }
 
-    pub fn lookup_variable(&self, var: &'ast Variable) -> Result<(DeclRef<'ast>, usize), String> {
-        self.variables
-            .get(&NonNull::from(var))
-            .copied()
-            .ok_or(format!("Internal error: '{}' was not found in symbol table", var.name.lexeme).to_string())
+    pub fn get_this(&self, this: &'ast ThisExpression) -> Result<(&'ast ClassDeclaration, usize), String> {
+        let entry = self.get(Symbol::from_this(this))?;
+        match entry.decl {
+            DeclRef::Class(class) => Ok((class, entry.scope_distance)),
+            _ => Err("Internal error: this expression mapped to non-class declaration".to_string()),
+        }
+    }
+
+    pub fn get_variable(&self, var: &'ast Variable) -> Result<(DeclRef<'ast>, usize), String> {
+        let entry = self.get(Symbol::from_variable(var))?;
+        Ok((entry.decl, entry.scope_distance))
     }
 }
 
@@ -624,18 +663,18 @@ impl<'ast> SemanticAnalyzer<'ast> {
     }
 
     pub fn superclass_scope_distance(&self, subclass: &'ast ClassDeclaration) -> Result<usize,String> {
-        self.symbol_table.lookup_superclass(subclass).map(|(_,result)| result)
+        self.symbol_table.get_superclass(subclass).map(|(_,result)| result)
     }
 
     pub fn super_scope_distance(&self, super_: &'ast SuperExpression) -> Result<usize,String> {
-        self.symbol_table.lookup_super(super_).map(|(_,result)| result)
+        self.symbol_table.get_super(super_).map(|(_,result)| result)
     }
 
     pub fn this_scope_distance(&self, var: &'ast ThisExpression) -> Result<usize,String> {
-        self.symbol_table.lookup_this(var).map(|(_,result)| result)
+        self.symbol_table.get_this(var).map(|(_,result)| result)
     }
 
     pub fn variable_scope_distance(&self, var: &'ast Variable) -> Result<usize,String> {
-        self.symbol_table.lookup_variable(var).map(|(_,result)| result)
+        self.symbol_table.get_variable(var).map(|(_,result)| result)
     }
 }
