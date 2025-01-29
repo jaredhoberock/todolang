@@ -25,3 +25,25 @@ pub fn restore_self_on_err(_attr: TokenStream, item: TokenStream) -> TokenStream
     TokenStream::from(expanded)
 }
 
+#[proc_macro_attribute]
+pub fn restore_state_on_err(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as ItemFn);
+    let name = &input.sig.ident;
+    let visibility = &input.vis;
+    let inputs = &input.sig.inputs;
+    let output = &input.sig.output;
+    let body = &input.block;
+
+    let expanded = quote! {
+        #visibility fn #name(#inputs) #output {
+            let state = self.save_state();
+            let result = (|| #body)();
+            if result.is_err() {
+                self.restore_state(state);
+            }
+            result
+        }
+    };
+
+    TokenStream::from(expanded)
+}

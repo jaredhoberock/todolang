@@ -2,7 +2,7 @@ use crate::syntax::*;
 use crate::token::*;
 
 extern crate restore_macros;
-use restore_macros::restore_self_on_err;
+use restore_macros::restore_state_on_err;
 
 pub struct ParseError {
     message: String,
@@ -57,15 +57,24 @@ impl<'a> Parser<'a> {
         Parser { remaining }
     }
 
-    // almost all of the methods below use restore_self_on_err
+    // almost all of the methods below use the restore_state_on_err macro
     // to reset the state of the Parser (i.e., the remaining unparsed input)
     // back to its original state upon entering the method when
     // these methods fail a parse
     //
     // this allows us to try to parse one alternative, automatically backtrack,
     // try the next alternative, etc.
+    //
+    // this macro hooks into save_state & restore_state
+    fn save_state(&self) -> &'a [Token] {
+        return self.remaining
+    }
 
-    #[restore_self_on_err]
+    fn restore_state(&mut self, old_remaining: &'a [Token]) {
+        self.remaining = old_remaining
+    }
+
+    #[restore_state_on_err]
     fn token(&mut self, kind: TokenKind) -> Result<Token, ParseError> {
         if self.remaining.is_empty() || self.remaining[0].kind != kind {
             return Err(ParseError::new(
@@ -79,17 +88,17 @@ impl<'a> Parser<'a> {
         Ok(result)
     }
 
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn comma(&mut self) -> Result<Token, ParseError> {
         self.token(TokenKind::Comma)
     }
 
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn underscore(&mut self) -> Result<Token, ParseError> {
         self.token(TokenKind::Underscore)
     }
 
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn either_token(&mut self, kind0: TokenKind, kind1: TokenKind) -> Result<Token, ParseError> {
         let tok0 = self.token(kind0);
         if tok0.is_ok() {
@@ -106,7 +115,7 @@ impl<'a> Parser<'a> {
         Err(ParseError::combine(errors))
     }
 
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn any_comparison_operator(&mut self) -> Result<Token, ParseError> {
         let gt = self.token(TokenKind::Greater);
         if gt.is_ok() {
@@ -170,7 +179,7 @@ impl<'a> Parser<'a> {
     }
 
     // grouping_expression := '(' expression ')'
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn grouping_expression(&mut self) -> Result<GroupingExpression, ParseError> {
         Ok(GroupingExpression {
             lparen: self.token(TokenKind::LeftParen)?,
@@ -180,7 +189,7 @@ impl<'a> Parser<'a> {
     }
 
     // literal := number_literal | string_literal | 'true' | 'false' | 'nil'
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn literal(&mut self) -> Result<Literal, ParseError> {
         let number = self.number_literal();
         if number.is_ok() {
@@ -219,7 +228,7 @@ impl<'a> Parser<'a> {
     }
 
     // match_arm := pattern '=>' expression
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn match_arm(&mut self) -> Result<MatchArm, ParseError> {
         let pattern = self.pattern()?;
         let _arrow = self.token(TokenKind::EqualGreater)?;
@@ -228,7 +237,7 @@ impl<'a> Parser<'a> {
     }
 
     // match_arms := match_arm (',' match_arms | ',')?
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn match_arms(&mut self) -> Result<Vec<MatchArm>, ParseError> {
         // first parse one arm
         let mut arms = vec![self.match_arm()?];
@@ -244,7 +253,7 @@ impl<'a> Parser<'a> {
     }
 
     // match_expression := "match" expression "{" match_arms "}"
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn match_expression(&mut self) -> Result<MatchExpression, ParseError> {
         let keyword = self.token(TokenKind::Match)?;
         let scrutinee = Box::new(self.expression()?);
@@ -255,7 +264,7 @@ impl<'a> Parser<'a> {
     }
 
     // super_expression := "super" "." identifier
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn super_expression(&mut self) -> Result<SuperExpression, ParseError> {
         let keyword = self.token(TokenKind::Super)?;
         let _dot = self
@@ -268,7 +277,7 @@ impl<'a> Parser<'a> {
     }
 
     // pattern := "_" | literal
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn pattern(&mut self) -> Result<Pattern, ParseError> {
         let underscore = self.underscore();
         if underscore.is_ok() {
@@ -289,7 +298,7 @@ impl<'a> Parser<'a> {
     }
 
     // primary_expression := literal | grouping_expression | super_expression | this | variable
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn primary_expression(&mut self) -> Result<Expression, ParseError> {
         let literal = self.literal();
         if literal.is_ok() {
@@ -328,7 +337,7 @@ impl<'a> Parser<'a> {
     }
 
     // arguments := expression ( "," expression )*
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn arguments(&mut self) -> Result<Vec<Expression>, ParseError> {
         let mut result = Vec::new();
 
@@ -362,7 +371,7 @@ impl<'a> Parser<'a> {
     }
 
     // call := primary_expression ( "." identifier | "(" arguments? ")" )*
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn call(&mut self) -> Result<Expression, ParseError> {
         let mut result = self.primary_expression()?;
 
@@ -418,7 +427,7 @@ impl<'a> Parser<'a> {
     }
 
     // unary := ( "!" | "-" ) | call
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn unary(&mut self) -> Result<Expression, ParseError> {
         if let Ok(op) = self.either_token(TokenKind::Bang, TokenKind::Minus) {
             let expr = UnaryExpression {
@@ -432,7 +441,7 @@ impl<'a> Parser<'a> {
     }
 
     // factor := unary ( ( "/" | "*" ) ) unary )*
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn factor(&mut self) -> Result<Expression, ParseError> {
         let mut result = self.unary()?;
 
@@ -451,7 +460,7 @@ impl<'a> Parser<'a> {
     }
 
     // term := factor ( ( "-" | "+" ) factor )*
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn term(&mut self) -> Result<Expression, ParseError> {
         let mut result = self.factor()?;
 
@@ -488,7 +497,7 @@ impl<'a> Parser<'a> {
     }
 
     // equality := comparison ( ( "!=" | "==" ) comparison )*
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn equality(&mut self) -> Result<Expression, ParseError> {
         let mut result = self.comparison()?;
 
@@ -507,7 +516,7 @@ impl<'a> Parser<'a> {
     }
 
     // logical_and := equality ( "and" equality)*
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn logical_and(&mut self) -> Result<Expression, ParseError> {
         let mut result = self.equality()?;
 
@@ -526,7 +535,7 @@ impl<'a> Parser<'a> {
     }
 
     // logical_or := logical_and ( "or" logical_and)*
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn logical_or(&mut self) -> Result<Expression, ParseError> {
         let mut result = self.logical_and()?;
 
@@ -546,7 +555,7 @@ impl<'a> Parser<'a> {
 
     // assignment := ( call "." )? identifier "=" assignment |
     //               logical_or
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn assignment(&mut self) -> Result<Expression, ParseError> {
         // parse the lhs before a possible equal sign
         let result = self.logical_or()?;
@@ -602,13 +611,13 @@ impl<'a> Parser<'a> {
     }
 
     // parameter := identifier
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn parameter(&mut self) -> Result<ParameterDeclaration, ParseError> {
         Ok(ParameterDeclaration { name: self.identifier()?})
     }
 
     // parameters := parameter ( "," parameter )*
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn parameters(&mut self) -> Result<Vec<ParameterDeclaration>, ParseError> {
         let mut params = vec![self.parameter()?];
 
@@ -623,7 +632,7 @@ impl<'a> Parser<'a> {
     }
 
     // function_declaration := "fun" identifier "(" parameters? ")" block_statement
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn function_declaration(&mut self) -> Result<FunctionDeclaration, ParseError> {
         let _fun = self
             .token(TokenKind::Fun)
@@ -647,7 +656,7 @@ impl<'a> Parser<'a> {
     }
 
     // class_declaration := "class" identifier ( "<" identifier )? "{" function_declaration* "}"
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn class_declaration(&mut self) -> Result<Declaration, ParseError> {
         let _class = self
             .token(TokenKind::Class)
@@ -681,7 +690,7 @@ impl<'a> Parser<'a> {
     }
 
     // variable_declaration := "var" identifier ( "=" expression )? ";"
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn variable_declaration(&mut self) -> Result<Declaration, ParseError> {
         let _var = self.token(TokenKind::Var)?;
         let name = self.identifier()?;
@@ -701,7 +710,7 @@ impl<'a> Parser<'a> {
     }
 
     // declaration := class_declaration | function_declaration | variable_declaration
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn declaration(&mut self) -> Result<Statement, ParseError> {
         let class = self.class_declaration().map(Statement::Decl);
         if class.is_ok() {
@@ -726,7 +735,7 @@ impl<'a> Parser<'a> {
     }
 
     // assert_statement := "assert" expression ";"
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn assert_statement(&mut self) -> Result<Statement, ParseError> {
         let _assert = self.token(TokenKind::Assert)?;
         let expr = self.expression()?;
@@ -735,7 +744,7 @@ impl<'a> Parser<'a> {
     }
 
     // block_statement := "{" ( statement )* "}"
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn block_statement(&mut self) -> Result<BlockStatement, ParseError> {
         let _lbrace = self
             .token(TokenKind::LeftBrace)
@@ -756,7 +765,7 @@ impl<'a> Parser<'a> {
     }
 
     // expression_statement := expression ";"
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn expression_statement(&mut self) -> Result<Statement, ParseError> {
         let expr = self.expression()?;
         let _semi = self.token(TokenKind::Semicolon)?;
@@ -764,7 +773,7 @@ impl<'a> Parser<'a> {
     }
 
     // for_statement := "for" "(" ( variable_declaration | expression_statement ) expression? ";" expression? ")" statement
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn for_statement(&mut self) -> Result<Statement, ParseError> {
         let _for = self
             .token(TokenKind::For)
@@ -809,7 +818,7 @@ impl<'a> Parser<'a> {
     }
 
     // if_statement := "if" "(" expression ")" statement ( "else" statement )?
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn if_statement(&mut self) -> Result<Statement, ParseError> {
         let _if = self.token(TokenKind::If)?;
         let _lparen = self.token(TokenKind::LeftParen)?;
@@ -830,7 +839,7 @@ impl<'a> Parser<'a> {
     }
 
     // print_statement := "print" expression ";"
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn print_statement(&mut self) -> Result<Statement, ParseError> {
         let _print = self.token(TokenKind::Print)?;
         let expr = self.expression()?;
@@ -839,7 +848,7 @@ impl<'a> Parser<'a> {
     }
 
     // return_statement := "return" expression? ";"
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn return_statement(&mut self) -> Result<Statement, ParseError> {
         self.token(TokenKind::Return)?;
         let mut expr = None;
@@ -851,7 +860,7 @@ impl<'a> Parser<'a> {
     }
 
     // while_statement := "while" "(" condition ")" statement
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn while_statement(&mut self) -> Result<Statement, ParseError> {
         let _while = self.token(TokenKind::While)?;
         let _lparen = self.token(TokenKind::LeftParen)?;
@@ -863,7 +872,7 @@ impl<'a> Parser<'a> {
 
     // statement := assert_statement | block_statement | declaration | expression_statement |
     //              for_statement | if_statement | print_statement | return_statement | while_statement
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn statement(&mut self) -> Result<Statement, ParseError> {
         let assert = self.assert_statement();
         if assert.is_ok() {
@@ -926,7 +935,7 @@ impl<'a> Parser<'a> {
     }
 
     // XXX note that this allows return statements at global scope
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn global_statement_or_eof(&mut self) -> Result<Option<Statement>, ParseError> {
         if self.token(TokenKind::Eof).is_ok() {
             return Ok(None);
@@ -935,7 +944,7 @@ impl<'a> Parser<'a> {
     }
 
     // program := statement* EOF
-    #[restore_self_on_err]
+    #[restore_state_on_err]
     fn program(&mut self) -> Result<Program, ParseError> {
         let mut stmts = Vec::new();
 
