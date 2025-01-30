@@ -9,6 +9,9 @@ pub enum Literal {
 }
 
 #[derive(Debug)]
+pub struct LiteralExpression(pub Literal);
+
+#[derive(Debug)]
 pub struct Variable {
     pub name: Token,
 }
@@ -54,8 +57,11 @@ pub struct LogicalExpression {
 }
 
 #[derive(Debug)]
+pub struct LiteralPattern(pub Literal);
+
+#[derive(Debug)]
 pub enum Pattern {
-    Literal(Literal),
+    Literal(LiteralPattern),
     Underscore,
 }
 
@@ -103,7 +109,7 @@ pub enum Expression {
     Call(CallExpression),
     Get(GetExpression),
     Grouping(GroupingExpression),
-    Literal(Literal),
+    Literal(LiteralExpression),
     Logical(LogicalExpression),
     Match(MatchExpression),
     Set(SetExpression),

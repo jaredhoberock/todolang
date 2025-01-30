@@ -366,7 +366,7 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn analyze_literal(&mut self, _lit: &Literal) -> Result<(), String> {
+    fn analyze_literal_expression(&mut self, _lit: &LiteralExpression) -> Result<(), String> {
         // XXX TODO we would return the type of literal here
         Ok(())
     }
@@ -378,7 +378,7 @@ impl SemanticAnalyzer {
             Expression::Call(c) => self.analyze_call_expression(c),
             Expression::Get(g) => self.analyze_get_expression(g),
             Expression::Grouping(g) => self.analyze_grouping_expression(g),
-            Expression::Literal(l) => self.analyze_literal(l),
+            Expression::Literal(l) => self.analyze_literal_expression(l),
             Expression::Logical(l) => self.analyze_logical_expression(l),
             Expression::Match(m) => self.analyze_match_expression(m),
             Expression::Set(s) => self.analyze_set_expression(s),
@@ -439,9 +439,13 @@ impl SemanticAnalyzer {
 
     fn analyze_pattern(&mut self, pattern: &Pattern) -> Result<(), String> {
         match pattern {
-            Pattern::Literal(l) => self.analyze_literal(l),
+            Pattern::Literal(l) => self.analyze_literal_pattern(l),
             Pattern::Underscore => Ok(())
         }
+    }
+
+    fn analyze_literal_pattern(&mut self, _lit: &LiteralPattern) -> Result<(), String> {
+      Ok(())
     }
 
     fn analyze_set_expression(&mut self, set: &SetExpression) -> Result<(), String> {

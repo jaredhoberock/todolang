@@ -520,8 +520,8 @@ impl Interpreter {
         }
     }
 
-    fn interpret_literal(&self, lit: &Literal) -> Result<Value, String> {
-        Ok(match lit {
+    fn interpret_literal_expression(&self, lit: &LiteralExpression) -> Result<Value, String> {
+        Ok(match &lit.0 {
             Literal::Bool(b) => Value::Bool(*b),
             Literal::Nil => Value::Nil,
             Literal::Number(n) => Value::Number(*n),
@@ -562,7 +562,7 @@ impl Interpreter {
     fn matches_pattern(&mut self, pattern: &Pattern, scrutinee: &Value) -> bool {
         match pattern {
             Pattern::Literal(lit) => {
-                match lit {
+                match &lit.0 {
                     Literal::Bool(b) => matches!(scrutinee, Value::Bool(v) if v == b),
                     Literal::Nil => matches!(scrutinee, Value::Nil),
                     Literal::Number(n) => matches!(scrutinee, Value::Number(v) if v == n),
@@ -706,7 +706,7 @@ impl Interpreter {
             Expression::Call(expr) => self.interpret_call_expression(expr),
             Expression::Get(g) => self.interpret_get_expression(g),
             Expression::Grouping(g) => self.interpret_grouping_expression(g),
-            Expression::Literal(l) => self.interpret_literal(l),
+            Expression::Literal(l) => self.interpret_literal_expression(l),
             Expression::Logical(expr) => self.interpret_logical_expression(expr),
             Expression::Match(expr) => self.interpret_match_expression(expr),
             Expression::Set(s) => self.interpret_set_expression(s),

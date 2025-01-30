@@ -228,6 +228,11 @@ impl<'a> Parser<'a> {
         Err(ParseError::combine(errors))
     }
 
+    // literal_expression := literal
+    fn literal_expression(&mut self) -> Result<LiteralExpression, ParseError> {
+         self.literal().map(LiteralExpression)
+    }
+
     // match_arm := pattern '=>' expression
     #[restore_state_on_err]
     fn match_arm(&mut self) -> Result<MatchArm, ParseError> {
@@ -277,7 +282,7 @@ impl<'a> Parser<'a> {
         Ok(SuperExpression { keyword, method })
     }
 
-    // pattern := "_" | literal
+    // pattern := "_" | literal_pattern
     #[restore_state_on_err]
     fn pattern(&mut self) -> Result<Pattern, ParseError> {
         let underscore = self.underscore();
@@ -285,9 +290,9 @@ impl<'a> Parser<'a> {
             return Ok(Pattern::Underscore);
         }
 
-        let literal = self.literal();
+        let literal = self.literal_pattern().map(Pattern::Literal);
         if literal.is_ok() {
-            return Ok(Pattern::Literal(literal?));
+            return literal;
         }
 
         let errors = vec![
@@ -298,10 +303,15 @@ impl<'a> Parser<'a> {
         Err(ParseError::combine(errors))
     }
 
-    // primary_expression := literal | grouping_expression | super_expression | this | variable
+    // literal_pattern := literal
+    fn literal_pattern(&mut self) -> Result<LiteralPattern, ParseError> {
+        self.literal().map(LiteralPattern)
+    }
+
+    // primary_expression := literal_expression | grouping_expression | super_expression | this | variable
     #[restore_state_on_err]
     fn primary_expression(&mut self) -> Result<Expression, ParseError> {
-        let literal = self.literal();
+        let literal = self.literal_expression();
         if literal.is_ok() {
             return literal.map(Expression::Literal);
         }
