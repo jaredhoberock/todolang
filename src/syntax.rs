@@ -206,7 +206,9 @@ pub enum Statement {
 
 #[derive(Debug)]
 pub struct Program {
-    pub statements: Vec<Statement>,
+    // the reason that we store Box<Statement> instead of Statement
+    // is to allow stable pointers AST during an interactive REPL
+    pub statements: Vec<Box<Statement>>,
 }
 
 impl Program {

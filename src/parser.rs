@@ -949,7 +949,7 @@ impl<'a> Parser<'a> {
         let mut stmts = Vec::new();
 
         while let Some(stmt) = self.global_statement_or_eof()? {
-            stmts.push(stmt);
+            stmts.push(Box::new(stmt));
         }
 
         Ok(Program { statements: stmts })

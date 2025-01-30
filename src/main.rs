@@ -1,11 +1,10 @@
-use std::cell::RefCell;
 use std::io::Write;
 
 use todolang::interpreter::Interpreter;
 use todolang::lexer::Lexer;
 use todolang::parser::{parse_global_statement_or_eof, parse_program, ParseError};
 use todolang::source_location::SourceRange;
-use todolang::syntax::{Program, Statement};
+use todolang::syntax::Program;
 use todolang::token::{Token, TokenKind};
 
 fn usage() {
@@ -69,12 +68,12 @@ fn interpret_from_file(filename: &str) -> bool {
     }
 }
 
-fn evaluate_global_statement(interp: &mut Interpreter, prog: &RefCell<Program>, source: &str) -> bool {
+fn evaluate_global_statement(interp: &mut Interpreter, prog: &mut Program, source: &str) -> bool {
     let tokens: Vec<Token> = Lexer::new(source).collect();
 
     // try to parse the next statement
     match parse_global_statement_or_eof(&tokens) {
-        Ok(Some(stmt)) => { prog.borrow_mut().statements.push(stmt); },
+        Ok(Some(stmt)) => { prog.statements.push(Box::new(stmt)); },
         Ok(None) => { return true; } // EOF
         Err(error) => {
             report_syntax_error(&error, source);
@@ -82,19 +81,8 @@ fn evaluate_global_statement(interp: &mut Interpreter, prog: &RefCell<Program>, 
         }
     }
 
-    // SAFETY: launder the parsed statement's lifetime
-    let stmt: &Statement = unsafe {
-        let borrow = prog.borrow();
-
-        // get the last statement
-        let stmt_ref = borrow.statements.last().unwrap();
-
-        // coerce the reference to have the 'ast lifetime
-        &*(stmt_ref as *const Statement)
-    };
-
     // the last statement of prog is the new statement to interpret
-    match interp.interpret_global_statement(stmt) {
+    match interp.interpret_global_statement(prog.statements.last().unwrap()) {
         Ok(_) => true,
         Err(error) => {
             eprintln!("Runtime error: {}", error);
@@ -104,7 +92,7 @@ fn evaluate_global_statement(interp: &mut Interpreter, prog: &RefCell<Program>, 
 }
 
 fn interpret_from_prompt() -> bool {
-    let prog = RefCell::new(Program::new());
+    let mut prog = Program::new();
     let mut interp = Interpreter::new();
     let mut input = String::new();
 
@@ -119,7 +107,7 @@ fn interpret_from_prompt() -> bool {
 
         match stdin.read_line(&mut input) {
             Ok(0) => return true, // EOF
-            Ok(_) => evaluate_global_statement(&mut interp, &prog, &input),
+            Ok(_) => evaluate_global_statement(&mut interp, &mut prog, &input),
             Err(error) => {
                 eprintln!("Error reading line: {}", error);
                 return false;
