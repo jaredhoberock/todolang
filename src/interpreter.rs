@@ -446,12 +446,12 @@ impl UserFunction {
     }
 }
 
-pub struct Interpreter<'ast> {
-    sema: SemanticAnalyzer<'ast>,
+pub struct Interpreter {
+    sema: SemanticAnalyzer,
     current_environment: Shared<Environment>,
 }
 
-impl<'ast> Interpreter<'ast> {
+impl Interpreter {
     fn initial_global_values() -> HashMap<String, Value> {
         let program_started = std::time::SystemTime::now();
 
@@ -939,7 +939,7 @@ impl<'ast> Interpreter<'ast> {
         }
     }
 
-    pub fn interpret_program(&mut self, prog: &'ast Program) -> Result<(), String> {
+    pub fn interpret_program(&mut self, prog: &Program) -> Result<(), String> {
         self.sema.analyze_program(prog)?;
         for stmt in &prog.statements {
             self.interpret_statement(stmt)?;
@@ -947,7 +947,7 @@ impl<'ast> Interpreter<'ast> {
         Ok(())
     }
 
-    pub fn interpret_global_statement(&mut self, stmt: &'ast Statement) -> Result<(), String> {
+    pub fn interpret_global_statement(&mut self, stmt: &Statement) -> Result<(), String> {
         self.sema.analyze_global_statement(stmt)?;
         self.interpret_statement(stmt)?;
         Ok(())

@@ -69,7 +69,7 @@ fn interpret_from_file(filename: &str) -> bool {
     }
 }
 
-fn evaluate_global_statement<'ast>(interp: &mut Interpreter<'ast>, prog: &'ast RefCell<Program>, source: &str) -> bool {
+fn evaluate_global_statement(interp: &mut Interpreter, prog: &RefCell<Program>, source: &str) -> bool {
     let tokens: Vec<Token> = Lexer::new(source).collect();
 
     // try to parse the next statement
@@ -83,7 +83,7 @@ fn evaluate_global_statement<'ast>(interp: &mut Interpreter<'ast>, prog: &'ast R
     }
 
     // SAFETY: launder the parsed statement's lifetime
-    let stmt: &'ast Statement = unsafe {
+    let stmt: &Statement = unsafe {
         let borrow = prog.borrow();
 
         // get the last statement
