@@ -11,93 +11,67 @@ fn usage() {
     println!("usage: todolang [script]");
 }
 
-fn report_syntax_error(error: &ParseError, source: &str) -> () {
-    eprintln!("Syntax error: {}", error);
-    match &error.error_token {
-        Some(token) => {
-            let range = SourceRange::line_of(source, &token.location);
-            let source_line = range.as_str(source);
-
-            // print the line number and corresponding source line
-            eprintln!("{:>4} | {}", range.line(), source_line);
-
-            // if we have encountered EOF, point at one position past the end of the line
-            let column = if token.kind == TokenKind::Eof {
-                source_line.len()
-            } else {
-                token.location.column
-            };
-
-            eprintln!("     | {}^", " ".repeat(column));
-        }
-        _ => (),
+fn format_syntax_error(error: &ParseError, source: &str) -> String {
+    let mut output = format!("Syntax error: {}\n", error);
+    
+    if let Some(token) = &error.error_token {
+        let range = SourceRange::line_of(source, &token.location);
+        let source_line = range.as_str(source);
+        
+        // Add the line number and source line
+        output.push_str(&format!("{:>4} | {}\n", range.line(), source_line));
+        
+        // Calculate the column position for the pointer
+        let column = if token.kind == TokenKind::Eof {
+            source_line.len()
+        } else {
+            token.location.column
+        };
+        
+        // Add the pointer line
+        output.push_str(&format!("     | {}^", " ".repeat(column)));
     }
+    
+    output
 }
 
-fn interpret(source: &str) -> bool {
-    let tokens: Vec<Token> = Lexer::new(source).collect();
-
-    let prog = match parse_program(&tokens) {
-        Ok(prog) => prog,
-        Err(error) => {
-            report_syntax_error(&error, source);
-            return false;
-        }
-    };
-
+fn interpret(source: String) -> Result<(),String> {
+    let tokens: Vec<Token> = Lexer::new(&source).collect();
+    let prog = parse_program(&tokens).map_err(|e| format_syntax_error(&e, &source))?;
     let mut interp = Interpreter::new();
-
-    match interp.interpret_program(&prog) {
-        Ok(_) => true,
-        Err(error) => {
-            eprintln!("Runtime error: {}", error);
-            false
-        }
-    }
+    interp.interpret_program(&prog).map_err(|e| format!("Runtime error: {}", e))
 }
 
-fn interpret_from_file(filename: &str) -> bool {
-    match std::fs::read_to_string(filename) {
-        Ok(source) => {
-            interpret(&source)
-        }
-        Err(error) => {
-            eprintln!("Error reading file: {}", error);
-            false
-        }
-    }
+fn interpret_from_file(filename: &str) -> Result<(),String> {
+    let source = std::fs::read_to_string(filename)
+        .map_err(|e| format!("Error reading file: {}", e))?;
+    interpret(source)
 }
 
-fn evaluate_global_statement(interp: &mut Interpreter, prog: &mut Program, source: &str) -> bool {
+fn evaluate_global_statement(interp: &mut Interpreter, prog: &mut Program, source: &str) -> Result<(),String> {
     let tokens: Vec<Token> = Lexer::new(source).collect();
 
     // try to parse the next statement
-    match parse_global_statement_or_eof(&tokens) {
-        Ok(Some(stmt)) => { prog.statements.push(Box::new(stmt)); },
-        Ok(None) => { return true; } // EOF
-        Err(error) => {
-            report_syntax_error(&error, source);
-            return false;
-        }
-    }
+    let stmt = match parse_global_statement_or_eof(&tokens) {
+        Ok(None) => { return Ok(()) }, // EOF
+        Ok(Some(stmt)) => { 
+            prog.statements.push(Box::new(stmt));
+            Ok(prog.statements.last().unwrap())
+        },
+        Err(error) => Err(format_syntax_error(&error, source)),
+    }?;
 
-    // the last statement of prog is the new statement to interpret
-    match interp.interpret_global_statement(prog.statements.last().unwrap()) {
-        Ok(_) => true,
-        Err(error) => {
-            eprintln!("Runtime error: {}", error);
-            false
-        }
-    }
+    interp.interpret_global_statement(stmt)
+        .map_err(|e| format!("Runtime error: {}", e))
 }
 
-fn interpret_from_prompt() -> bool {
+fn interpret_from_prompt() -> Result<(),String> {
     let mut prog = Program::new();
     let mut interp = Interpreter::new();
     let mut input = String::new();
 
     let stdin = std::io::stdin();
-
+    
     loop {
         print!("> ");
         std::io::stdout().flush().unwrap();
@@ -105,30 +79,32 @@ fn interpret_from_prompt() -> bool {
         // clear previous input
         input.clear();
 
-        match stdin.read_line(&mut input) {
-            Ok(0) => return true, // EOF
-            Ok(_) => evaluate_global_statement(&mut interp, &mut prog, &input),
-            Err(error) => {
-                eprintln!("Error reading line: {}", error);
-                return false;
-            }
-        };
+        let n = stdin.read_line(&mut input)
+            .map_err(|e| format!("Error reading line: {}", e))?;
+
+        if n == 0 {
+            // EOF
+            return Ok(());
+        }
+
+        evaluate_global_statement(&mut interp, &mut prog, &input)?;
     }
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    if args.len() > 2 {
+    let result = if args.len() > 2 {
         usage();
-        return;
-    }
-
-    let result = if args.len() == 2 {
+        Ok(())
+    } else if args.len() == 2 {
         interpret_from_file(&args[1])
     } else {
         interpret_from_prompt()
     };
 
-    std::process::exit(if result { 0 } else { -1 });
+    if let Err(e) = result {
+        eprintln!("{}", e);
+        std::process::exit(1)
+    }
 }

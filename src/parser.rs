@@ -4,6 +4,7 @@ use crate::token::*;
 extern crate restore_macros;
 use restore_macros::restore_state_on_err;
 
+#[derive(Debug)]
 pub struct ParseError {
     message: String,
     remaining_len: usize,
