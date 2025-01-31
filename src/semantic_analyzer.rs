@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ptr::NonNull;
 
 use crate::syntax::*;
+use crate::types::TypeEnvironment;
 
 #[derive(Copy, Clone)]
 enum DeclRef {
@@ -236,16 +237,18 @@ impl LexicalScope {
 
 
 pub struct SemanticAnalyzer {
-    symbol_table: SymbolTable,
     scopes: Vec<LexicalScope>,
+    symbol_table: SymbolTable,
+    type_env: TypeEnvironment,
 }
 
 
 impl SemanticAnalyzer {
     pub fn new(builtin_functions: Vec<String>) -> Self {
         Self {
-            symbol_table: SymbolTable::new(),
             scopes: vec![LexicalScope::new_global(builtin_functions)],
+            symbol_table: SymbolTable::new(),
+            type_env: TypeEnvironment::new(),
         }
     }
 
@@ -366,8 +369,14 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn analyze_literal_expression(&mut self, _lit: &LiteralExpression) -> Result<(), String> {
-        // XXX TODO we would return the type of literal here
+    fn analyze_literal_expression(&mut self, lit: &LiteralExpression) -> Result<(), String> {
+        let ty = match &lit.0 {
+            Literal::Number(_) => self.type_env.get_number(),
+            _ => self.type_env.get_unknown(),
+        };
+
+        self.type_env.set_type(From::from(lit), ty);
+
         Ok(())
     }
 

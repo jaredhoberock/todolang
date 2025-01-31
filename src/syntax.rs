@@ -1,4 +1,5 @@
 use crate::token::Token;
+use enum_macros::EnumRef;
 
 #[derive(Debug)]
 pub enum Literal {
@@ -102,7 +103,8 @@ pub struct UnaryExpression {
     pub expr: Box<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, EnumRef)]
+#[ref_name(ExprRef)]
 pub enum Expression {
     Assignment(AssignmentExpression),
     Binary(BinaryExpression),
