@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ptr::NonNull;
 
 use crate::syntax::*;
-use crate::types::TypeEnvironment;
+use crate::types::TypeChecker;
 
 #[derive(Copy, Clone)]
 enum DeclRef {
@@ -239,7 +239,7 @@ impl LexicalScope {
 pub struct SemanticAnalyzer {
     scopes: Vec<LexicalScope>,
     symbol_table: SymbolTable,
-    type_env: TypeEnvironment,
+    type_checker: TypeChecker,
 }
 
 
@@ -248,7 +248,7 @@ impl SemanticAnalyzer {
         Self {
             scopes: vec![LexicalScope::new_global(builtin_functions)],
             symbol_table: SymbolTable::new(),
-            type_env: TypeEnvironment::new(),
+            type_checker: TypeChecker::new(),
         }
     }
 
@@ -369,14 +369,7 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn analyze_literal_expression(&mut self, lit: &LiteralExpression) -> Result<(), String> {
-        let ty = match &lit.0 {
-            Literal::Number(_) => self.type_env.get_number(),
-            _ => self.type_env.get_unknown(),
-        };
-
-        self.type_env.set_type(From::from(lit), ty);
-
+    fn analyze_literal_expression(&mut self, _: &LiteralExpression) -> Result<(), String> {
         Ok(())
     }
 
@@ -395,7 +388,10 @@ impl SemanticAnalyzer {
             Expression::This(t) => self.analyze_this_expression(t),
             Expression::Unary(u) => self.analyze_unary_expression(u),
             Expression::Variable(v) => self.analyze_variable(v),
-        }
+        }?;
+
+        // check the type of the expression
+        self.type_checker.check_expression(expr).map(|_| ())
     }
 
     fn analyze_assignment_expression(&mut self, expr: &AssignmentExpression) -> Result<(), String> {
@@ -560,12 +556,19 @@ impl SemanticAnalyzer {
 
     fn analyze_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<(), String> {
         self.current_scope_mut()?.declare_variable(decl)?;
+
+        // XXX TODO analyze ascription
+        //if let Some(ascription) = &decl.type_ascription {
+        //    self.analyze_type_ascription(ascription)?;
+        //}
+
         if let Some(init) = &decl.initializer {
-            // XXX TODO check that the type of the variable's
-            //     declaration matches the type of the initializer expression
             self.analyze_expression(init)?;
         }
         self.current_scope_mut()?.define(&decl.name.lexeme)
+
+        // XXX TODO type check 
+        //self.type_checker.check_variable_declaration(self.symbol_table, decl)
     }
 
     fn analyze_assert_statement(&mut self, stmt: &AssertStatement) -> Result<(), String> {

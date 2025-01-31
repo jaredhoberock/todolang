@@ -4,12 +4,20 @@ use std::ops::Deref;
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
     Number,
+    String,
+    Bool,
     Unknown,
 }
 
 // Public reference type that hides Intern<Type> from users of this module
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Type(Intern<Kind>);
+
+impl Type {
+    pub fn is_number(&self) -> bool {
+        matches!(**self, Kind::Number)
+    }
+}
 
 impl Deref for Type {
     type Target = Kind;
@@ -26,8 +34,16 @@ impl TypeArena {
       Self
     }
 
+    pub fn bool(&self) -> Type {
+        Type(Intern::new(Kind::Bool))
+    }
+
     pub fn number(&self) -> Type {
         Type(Intern::new(Kind::Number))
+    }
+
+    pub fn string(&self) -> Type {
+        Type(Intern::new(Kind::String))
     }
 
     pub fn unknown(&self) -> Type {

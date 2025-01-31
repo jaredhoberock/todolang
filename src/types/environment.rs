@@ -26,8 +26,16 @@ impl TypeEnvironment {
     }
 
     // Get types through the arena
+    pub fn get_bool(&self) -> Type {
+        self.arena.bool()
+    }
+
     pub fn get_number(&self) -> Type {
         self.arena.number()
+    }
+
+    pub fn get_string(&self) -> Type {
+        self.arena.string()
     }
 
     pub fn get_unknown(&self) -> Type {

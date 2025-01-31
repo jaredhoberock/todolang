@@ -35,6 +35,8 @@ pub fn derive_ref(input: TokenStream) -> TokenStream {
        })
        .collect();
 
+   let name = &input.ident;
+
    let output = quote! {
        use std::ptr::NonNull;
 
@@ -43,6 +45,7 @@ pub fn derive_ref(input: TokenStream) -> TokenStream {
            #(#variant_idents(NonNull<#variant_types>)),*
        }
 
+       // From impls for individual variant types
        #(
            impl From<&#variant_types> for #ref_name {
                fn from(expr: &#variant_types) -> Self {
@@ -50,6 +53,17 @@ pub fn derive_ref(input: TokenStream) -> TokenStream {
                }
            }
        )*
+
+       // New impl for converting from &Expression
+       impl From<&#name> for #ref_name {
+           fn from(expr: &#name) -> Self {
+               match expr {
+                   #(
+                       #name::#variant_idents(e) => #ref_name::#variant_idents(From::from(e))
+                   ),*
+               }
+           }
+       }
    };
 
    output.into()
