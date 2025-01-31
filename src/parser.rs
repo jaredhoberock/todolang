@@ -621,6 +621,12 @@ impl<'a> Parser<'a> {
         Err(ParseError::combine(errors))
     }
 
+    // type_expression := identifier
+    #[restore_state_on_err]
+    fn type_expression(&mut self) -> Result<TypeExpression, ParseError> {
+        Ok(TypeExpression{ identifier: self.identifier()?})
+    }
+
     // parameter := identifier
     #[restore_state_on_err]
     fn parameter(&mut self) -> Result<ParameterDeclaration, ParseError> {
@@ -700,11 +706,20 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    // variable_declaration := "var" identifier ( "=" expression )? ";"
+    // type_ascription := ":" type_expression
+    #[restore_state_on_err]
+    fn type_ascription(&mut self) -> Result<TypeAscription, ParseError> {
+        let colon = self.token(TokenKind::Colon)?;
+        let expr = self.type_expression()?;
+        Ok(TypeAscription{ colon, expr })
+    }
+
+    // variable_declaration := "var" identifier (type_ascription)? ( "=" expression )? ";"
     #[restore_state_on_err]
     fn variable_declaration(&mut self) -> Result<Declaration, ParseError> {
         let _var = self.token(TokenKind::Var)?;
         let name = self.identifier()?;
+        let ascription = self.type_ascription().ok();
 
         let initializer = if self.token(TokenKind::Equal).is_ok() {
             Some(self.expression()?)
@@ -716,6 +731,7 @@ impl<'a> Parser<'a> {
 
         Ok(Declaration::Variable(VariableDeclaration {
             name,
+            ascription,
             initializer,
         }))
     }

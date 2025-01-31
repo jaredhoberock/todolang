@@ -24,6 +24,7 @@ pub enum TokenKind {
 
     // Single-character tokens
     Bang,
+    Colon,
     Comma,
     Dot,
     Equal,
@@ -99,6 +100,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Bang => write!(f, "!"),
             TokenKind::BangEqual => write!(f, "!="),
             TokenKind::Class => write!(f, "class"),
+            TokenKind::Colon => write!(f, ":"),
             TokenKind::Comma => write!(f, ","),
             TokenKind::Dot => write!(f, "."),
             TokenKind::Else => write!(f, "else"),

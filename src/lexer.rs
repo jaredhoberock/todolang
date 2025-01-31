@@ -133,6 +133,7 @@ impl<'a> Iterator for Lexer<'a> {
 
             let token = match c {
                 // single-character lexemes
+                ':' => Token::new(TokenKind::Colon, String::from(":"), c_loc),
                 '_' => Token::new(TokenKind::Underscore, String::from("_"), c_loc),
                 '(' => Token::new(TokenKind::LeftParen, String::from("("), c_loc),
                 ')' => Token::new(TokenKind::RightParen, String::from(")"), c_loc),
@@ -232,10 +233,11 @@ mod tests {
 
     #[test]
     fn test_single_char_tokens() {
-        let source = "(){},.-+;*";
+        let source = ":(){},.-+;*";
         let tokens: Vec<Token> = Lexer::new(source).collect();
 
         let expected_kinds = [
+            TokenKind::Colon,
             TokenKind::LeftParen,
             TokenKind::RightParen,
             TokenKind::LeftBrace,

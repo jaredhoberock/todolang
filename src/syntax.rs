@@ -122,6 +122,17 @@ pub enum Expression {
 }
 
 #[derive(Debug)]
+pub struct TypeExpression {
+    pub identifier: Token,
+}
+
+#[derive(Debug)]
+pub struct TypeAscription {
+    pub colon: Token,
+    pub expr: TypeExpression,
+}
+
+#[derive(Debug)]
 pub struct ClassDeclaration {
     pub name: Token,
     pub superclass: Option<Token>,
@@ -143,6 +154,7 @@ pub struct FunctionDeclaration {
 #[derive(Debug)]
 pub struct VariableDeclaration {
     pub name: Token,
+    pub ascription: Option<TypeAscription>,
     pub initializer: Option<Expression>,
 }
 
