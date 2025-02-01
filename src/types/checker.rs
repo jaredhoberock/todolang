@@ -2,7 +2,7 @@ use crate::syntax::*;
 use std::collections::HashMap;
 use super::environment::TypeEnvironment;
 use super::error::TypeError;
-use super::types::Type;
+use super::types::{Kind, Type};
 
 pub struct TypeChecker {
     env: TypeEnvironment,
@@ -15,6 +15,23 @@ impl TypeChecker {
         Self { 
             env: TypeEnvironment::new(),
             error_cache: HashMap::new(),
+        }
+    }
+
+    // For our simple language:
+    // * If either type is an inference variable, we treat them as compatible
+    // * Otherwise, the types must be equal
+    fn unify(&mut self, t1: Type, t2: Type) -> Result<(), TypeError> {
+        match (&*t1, &*t2) {
+            // If either is an inference variable, succeed
+            (Kind::InferenceVariable(_), _) | (_, Kind::InferenceVariable(_)) => Ok(()),
+            // If both are concrete, they must be equal
+            _ if t1 == t2 => Ok(()),
+            // Otherwise, fail
+            _ => Err(TypeError::Mismatch{ 
+                expected: t1, 
+                found: t2
+            }),
         }
     }
 
@@ -75,22 +92,20 @@ impl TypeChecker {
     }
 
     pub fn check_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<Type, TypeError> {
-        let declared_type = decl.ascription
-            .as_ref()
-            .map(|ascription| self.check_type_expression(&ascription.expr))
-            .transpose()?;
+        let declared = if let Some(ascription) = &decl.ascription {
+            self.check_type_expression(&ascription.expr)?
+        } else {
+            self.env.get_unknown()
+        };
 
-        let inferred_type = decl.initializer
-            .as_ref()
-            .map(|initializer| self.check_expression(initializer))
-            .transpose()?;
+        let inferred = if let Some(initializer) = &decl.initializer {
+            self.check_expression(initializer)?
+        } else {
+            self.env.get_unknown()
+        };
 
-        if let (Some(declared), Some(inferred)) = (declared_type, inferred_type) {
-            if declared != inferred {
-                return Err(TypeError::Mismatch{ expected: declared, found: inferred });
-            }
-        }
+        self.unify(declared, inferred)?;
 
-        Ok(declared_type.or(inferred_type).unwrap_or(self.env.get_unknown()))
+        Ok(declared)
     }
 }

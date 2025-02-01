@@ -1,4 +1,5 @@
 use internment::Intern;
+use std::cell::Cell;
 use std::fmt;
 use std::ops::Deref;
 
@@ -7,7 +8,7 @@ pub enum Kind {
     Number,
     String,
     Bool,
-    Unknown,
+    InferenceVariable(usize),
 }
 
 // Public reference type that hides Intern<Type> from users of this module
@@ -34,16 +35,24 @@ impl fmt::Display for Type {
             Kind::Number => write!(f, "Number"),
             Kind::String => write!(f, "String"),
             Kind::Bool   => write!(f, "Bool"),
-            Kind::Unknown => write!(f, "Unknown"),
+            Kind::InferenceVariable(id) => write!(f, "T{}", id),
         }
     }
 }
 
-pub struct TypeArena;
+pub struct TypeArena {
+    counter: Cell<usize>,
+}
 
 impl TypeArena {
     pub fn new() -> Self {
-      Self
+      Self { counter: Cell::new(0) }
+    }
+
+    pub fn fresh(&self) -> Type {
+        let id = self.counter.get();
+        self.counter.set(id + 1);
+        Type(Intern::new(Kind::InferenceVariable(id)))
     }
 
     pub fn bool(&self) -> Type {
@@ -59,6 +68,6 @@ impl TypeArena {
     }
 
     pub fn unknown(&self) -> Type {
-        Type(Intern::new(Kind::Unknown))
+        self.fresh()
     }
 }
