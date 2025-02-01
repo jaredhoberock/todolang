@@ -93,7 +93,7 @@ impl LexicalScope {
 
     fn assert_name_is_unique(&self, name: &str) -> Result<(), SemanticError> {
         if self.declarations.contains_key(name) {
-            return Err(From::from(format!("'{}' is already declared in this scope", name)));
+            return Err(Into::into(format!("'{}' is already declared in this scope", name)));
         }
         Ok(())
     }
@@ -107,12 +107,12 @@ impl LexicalScope {
     fn define(&mut self, name: &str) -> Result<(),SemanticError> {
         if let Some(entry) = self.declarations.get_mut(name) {
             if entry.is_defined {
-                return Err(From::from(format!("Internal error: cannot redefine '{}'", name)))
+                return Err(Into::into(format!("Internal error: cannot redefine '{}'", name)))
             }
             entry.is_defined = true;
             Ok(())
         } else {
-            Err(From::from(format!("Internal error: cannot define '{}' before declaration", name)))
+            Err(Into::into(format!("Internal error: cannot define '{}' before declaration", name)))
         }
     }
 
@@ -121,7 +121,7 @@ impl LexicalScope {
     }
 
     fn declare_class(&mut self, decl: &ClassDeclaration) -> Result<(),SemanticError> {
-        self.insert(&decl.name.lexeme, false, DeclRef::Class(From::from(decl)))
+        self.insert(&decl.name.lexeme, false, DeclRef::Class(Into::into(decl)))
     }
 
     fn declare_and_define_function(&mut self, decl: &FunctionDeclaration) -> Result<(),SemanticError> {
@@ -133,11 +133,11 @@ impl LexicalScope {
     }
 
     fn declare_and_define_super(&mut self, decl: &ClassDeclaration) -> Result<(),SemanticError> {
-        self.insert("super", true, DeclRef::Class(From::from(decl)))
+        self.insert("super", true, DeclRef::Class(Into::into(decl)))
     }
 
     fn declare_and_define_this(&mut self, decl: &ClassDeclaration) -> Result<(),SemanticError> {
-        self.insert("this", true, DeclRef::Class(From::from(decl)))
+        self.insert("this", true, DeclRef::Class(Into::into(decl)))
     }
 
     fn declare_variable(&mut self, decl: &VariableDeclaration) -> Result<(),SemanticError> {
@@ -376,16 +376,16 @@ impl SemanticAnalyzer {
             Some(scope) if matches!(scope.kind, LexicalScopeKind::Class(ClassKind::Subclass)) => {
                 self.resolve_super(&super_).map_err(Into::into)
             }
-            Some(_) => Err(From::from("Can't user 'super' in a class with no superclass.")),
-            None => Err(From::from("Can't use 'super' outside of a class.")),
+            Some(_) => Err(Into::into("Can't user 'super' in a class with no superclass.")),
+            None => Err(Into::into("Can't use 'super' outside of a class.")),
         }
     }
 
     fn analyze_this_expression(&mut self, this: &ThisExpression) -> Result<(), SemanticError> {
         if !self.is_inside_class() {
-            return Err(From::from("Can't use 'this' outside of a class"));
+            return Err(Into::into("Can't use 'this' outside of a class"));
         }
-        self.resolve_this(&this).map_err(From::from)
+        self.resolve_this(&this).map_err(Into::into)
     }
 
     fn analyze_unary_expression(&mut self, expr: &UnaryExpression) -> Result<(), SemanticError> {
@@ -400,7 +400,7 @@ impl SemanticAnalyzer {
         self.type_checker
             .check_type_expression(expr)
             .map(drop)
-            .map_err(From::from)
+            .map_err(Into::into)
     }
 
     fn analyze_type_ascription(&mut self, ascription: &TypeAscription) -> Result<(), SemanticError> {
@@ -421,7 +421,7 @@ impl SemanticAnalyzer {
         // Handle superclass if present
         let superdecl = match &class.superclass {
             Some(superclass_name) if superclass_name.lexeme == class.name.lexeme => {
-                return Err(From::from("A class can't inherit from itself."));
+                return Err(Into::into("A class can't inherit from itself."));
             }
             Some(superclass_name) => {
                 let (decl, scope_distance) = self.resolve_name(&superclass_name.lexeme)?;
@@ -491,7 +491,7 @@ impl SemanticAnalyzer {
 
         self.type_checker.check_variable_declaration(decl)
             .map(drop)
-            .map_err(From::from)
+            .map_err(Into::into)
     }
 
     fn analyze_assert_statement(&mut self, stmt: &AssertStatement) -> Result<(), SemanticError> {
@@ -539,12 +539,12 @@ impl SemanticAnalyzer {
 
     fn analyze_return_statement(&mut self, stmt: &ReturnStatement) -> Result<(), SemanticError> {
         if !self.is_inside_function() {
-            return Err(From::from("Cannot return from outside of a function."));
+            return Err(Into::into("Cannot return from outside of a function."));
         }
 
         if self.is_inside_initializer() {
             if stmt.expr.is_some() {
-                return Err(From::from("Can't return a value from an initializer."));
+                return Err(Into::into("Can't return a value from an initializer."));
             }
         }
 
@@ -577,7 +577,7 @@ impl SemanticAnalyzer {
     pub fn analyze_global_statement(&mut self, stmt: &Statement) -> Result<(), SemanticError> {
         if !(self.scopes.len() == 1 && self.scopes[0].kind == LexicalScopeKind::Global) {
             return Err(
-                From::from("Internal error: expected single global scope before global statement."),
+                Into::into("Internal error: expected single global scope before global statement."),
             );
         }
 
@@ -586,7 +586,7 @@ impl SemanticAnalyzer {
         if self.scopes.len() == 1 && self.scopes[0].kind == LexicalScopeKind::Global {
             Ok(())
         } else {
-            Err(From::from("Internal error: expected single global scope after global statement."))
+            Err(Into::into("Internal error: expected single global scope after global statement."))
         }
     }
 
