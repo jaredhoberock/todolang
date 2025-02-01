@@ -12,9 +12,6 @@ pub enum SemanticError {
     #[error("{0}")]
     ControlFlow(String),
 
-    #[error("Internal error: {0}")]
-    Internal(String),
-
     #[error("Name resolution error: {0}")]
     Name(String),
 
@@ -29,10 +26,6 @@ impl SemanticError {
 
     fn control_flow(msg: impl Into<String>) -> Self {
         SemanticError::ControlFlow(msg.into())
-    }
-
-    fn internal(msg: impl Into<String>) -> Self {
-        SemanticError::Internal(msg.into())
     }
 
     fn name(msg: impl Into<String>) -> Self {
@@ -106,18 +99,20 @@ impl LexicalScope {
         Ok(())
     }
 
-    fn define(&mut self, name: &str) -> Result<(),SemanticError> {
-        if let Some(entry) = self.declarations.get_mut(name) {
-            if entry.is_defined {
-                return Err(SemanticError::internal(format!("cannot redefine '{}'", name)))
+    fn define(&mut self, name: &str) {
+        match self.declarations.get_mut(name) {
+            Some(entry) if entry.is_defined => {
+                panic!("Internal compiler error: cannot redefine '{}'", name);
             }
-            entry.is_defined = true;
-            Ok(())
-        } else {
-            Err(SemanticError::internal(format!("cannot define '{}' before declaration", name)))
+            Some(entry) => {
+                entry.is_defined = true;
+            }
+            None => {
+                panic!("Internal compiler error: cannot define '{}' before declaration", name);
+            }
         }
     }
-
+    
     fn declare_builtin_function(&mut self, name: &str) -> Result<(),SemanticError> {
         self.insert(&name, false, DeclRef::BuiltinFunction)
     }
@@ -231,8 +226,10 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn current_scope_mut(&mut self) -> Result<&mut LexicalScope, SemanticError> {
-        self.scopes.last_mut().ok_or(SemanticError::internal("outside of a scope"))
+    fn current_scope_mut(&mut self) -> &mut LexicalScope {
+        self.scopes
+            .last_mut()
+            .expect("Internal compiler error: called current_scope_mut outside of a scope")
     }
 
     // name resolution searches the stack of scopes for a declaration of the given name
@@ -241,7 +238,7 @@ impl SemanticAnalyzer {
     // 2. the distance to the scope containing that declaration
     fn resolve_name(&self, name: &str) -> Result<(DeclRef, usize), SemanticError> {
         if self.scopes.is_empty() {
-            return Err(SemanticError::internal("cannot resolve name outside of a scope"));
+            panic!("Internal compiler error: cannot resolve name '{}' outside of a scope", name);
         }
 
         // look through each scope, starting at the top of
@@ -259,7 +256,7 @@ impl SemanticAnalyzer {
     fn resolve_super(&mut self, super_: &SuperExpression) -> Result<(), SemanticError> {
         let (decl, scope_distance) = self.resolve_name("super")?;
         let class = decl.into_class_decl()
-            .ok_or(SemanticError::internal("'super' resolved to something other than a ClassDeclaration"))?;
+            .expect("Internal compiler error: 'super' resolved to something other than a ClassDeclaration");
         self.symbol_table.insert_super(super_, class, scope_distance);
         Ok(())
     }
@@ -267,7 +264,7 @@ impl SemanticAnalyzer {
     fn resolve_this(&mut self, this: &ThisExpression) -> Result<(), SemanticError> {
         let (decl, scope_distance) = self.resolve_name("this")?;
         let class = decl.into_class_decl()
-            .ok_or(SemanticError::internal("'this' resolved to something other than a ClassDeclaration"))?;
+            .expect("Internal compiler error: 'this' resolved to something other than a ClassDeclaration");
         self.symbol_table.insert_this(this, class, scope_distance);
         Ok(())
     }
@@ -415,7 +412,7 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_class_declaration(&mut self, class: &ClassDeclaration) -> Result<(), SemanticError> {
-        self.current_scope_mut()?.declare_class(class)?;
+        self.current_scope_mut().declare_class(class)?;
 
         // Handle superclass if present
         let superdecl = match &class.superclass {
@@ -435,14 +432,14 @@ impl SemanticAnalyzer {
         // Handle class body and methods
         self.with_new_scope_if(superdecl.is_some(), LexicalScopeKind::Super, |slf| {
             let class_kind = if let Some(superdecl) = superdecl {
-                slf.current_scope_mut()?.declare_and_define_super(superdecl)?;
+                slf.current_scope_mut().declare_and_define_super(superdecl)?;
                 ClassKind::Subclass
             } else {
                 ClassKind::Normal
             };
 
             slf.with_new_scope(LexicalScopeKind::Class(class_kind), |slf| {
-                slf.current_scope_mut()?.declare_and_define_this(class)?;
+                slf.current_scope_mut().declare_and_define_this(class)?;
 
                 for method in &class.methods {
                     let kind = if method.name.lexeme == "init" {
@@ -456,14 +453,15 @@ impl SemanticAnalyzer {
             })
         })?;
 
-        self.current_scope_mut()?.define(&class.name.lexeme)
+        self.current_scope_mut().define(&class.name.lexeme);
+        Ok(())
     }
 
     fn analyze_function_declaration(
         &mut self, 
         decl: &FunctionDeclaration,
         kind: FunctionKind) -> Result<(), SemanticError> {
-        self.current_scope_mut()?.declare_and_define_function(&decl)?;
+        self.current_scope_mut().declare_and_define_function(&decl)?;
         self.with_new_scope(LexicalScopeKind::Function(kind), |slf| {
             for param in &decl.parameters {
                 slf.analyze_parameter_declaration(&param)?;
@@ -473,11 +471,11 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_parameter_declaration(&mut self, decl: &ParameterDeclaration) -> Result<(), SemanticError> {
-        self.current_scope_mut()?.declare_and_define_parameter(decl)
+        self.current_scope_mut().declare_and_define_parameter(decl)
     }
 
     fn analyze_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<(), SemanticError> {
-        self.current_scope_mut()?.declare_variable(decl)?;
+        self.current_scope_mut().declare_variable(decl)?;
 
         if let Some(ascription) = &decl.ascription {
             self.analyze_type_ascription(ascription)?;
@@ -486,7 +484,7 @@ impl SemanticAnalyzer {
         if let Some(init) = &decl.initializer {
             self.analyze_expression(init)?;
         }
-        self.current_scope_mut()?.define(&decl.name.lexeme)?;
+        self.current_scope_mut().define(&decl.name.lexeme);
 
         self.type_checker.check_variable_declaration(decl)
             .map(drop)
@@ -574,19 +572,17 @@ impl SemanticAnalyzer {
     }
 
     pub fn analyze_global_statement(&mut self, stmt: &Statement) -> Result<(), SemanticError> {
-        if !(self.scopes.len() == 1 && self.scopes[0].kind == LexicalScopeKind::Global) {
-            return Err(
-                SemanticError::internal("expected single global scope before global statement."),
-            );
+        if self.scopes.len() != 1 || self.scopes[0].kind != LexicalScopeKind::Global {
+            panic!("Internal compiler error: expected single global scope before global statement.");
         }
 
         self.analyze_statement(stmt)?;
 
-        if self.scopes.len() == 1 && self.scopes[0].kind == LexicalScopeKind::Global {
-            Ok(())
-        } else {
-            Err(SemanticError::internal("expected single global scope after global statement."))
+        if self.scopes.len() != 1 || self.scopes[0].kind != LexicalScopeKind::Global {
+            panic!("Internal compiler error: expected single global scope after global statement.");
         }
+
+        Ok(())
     }
 
     pub fn analyze_program(&mut self, prog: &Program) -> Result<(), SemanticError> {
