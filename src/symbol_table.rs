@@ -1,4 +1,5 @@
 use crate::syntax::*;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ptr::NonNull;
 
@@ -22,6 +23,7 @@ impl DeclRef {
     }
 }
 
+#[derive(Clone)]
 struct SymbolTableEntry {
     decl: DeclRef,
     scope_distance: usize,
@@ -63,39 +65,49 @@ impl Symbol {
 }
 
 pub struct SymbolTable {
-    symbols: HashMap<Symbol, SymbolTableEntry>,
+    symbols: RefCell<HashMap<Symbol, SymbolTableEntry>>,
 }
 
 impl SymbolTable {
     pub fn new() -> Self {
         Self { 
-            symbols: HashMap::new(),
+            symbols: RefCell::new(HashMap::new()),
         }
     }
 
-    pub fn insert_superclass(&mut self, subclass: &ClassDeclaration, superclass: &ClassDeclaration, scope_distance: usize) {
+    pub fn insert_superclass(&self, subclass: &ClassDeclaration, superclass: &ClassDeclaration, scope_distance: usize) {
         let entry = SymbolTableEntry{ decl: DeclRef::Class(NonNull::from(superclass)), scope_distance };
-        self.symbols.insert(Symbol::Subclass(NonNull::from(subclass)), entry);
-    }
-
-    pub fn insert_super(&mut self, super_: &SuperExpression, decl: &ClassDeclaration, scope_distance: usize) {
-        let entry = SymbolTableEntry{ decl: DeclRef::Class(NonNull::from(decl)), scope_distance };
-        self.symbols.insert(Symbol::Super(NonNull::from(super_)), entry);
-    }
-
-    pub fn insert_this(&mut self, this: &ThisExpression, decl: &ClassDeclaration, scope_distance: usize) {
-        let entry = SymbolTableEntry { decl: DeclRef::Class(NonNull::from(decl)), scope_distance };
-        self.symbols.insert(Symbol::This(NonNull::from(this)), entry);
-    }
-
-    pub fn insert_variable(&mut self, var: &Variable, decl: DeclRef, scope_distance: usize) {
-        let entry = SymbolTableEntry { decl, scope_distance };
-        self.symbols.insert(Symbol::Variable(NonNull::from(var)), entry);
-    }
-
-    fn get(&self, symbol: Symbol) -> Result<&SymbolTableEntry, String> {
         self.symbols
+            .borrow_mut()
+            .insert(Symbol::Subclass(NonNull::from(subclass)), entry);
+    }
+
+    pub fn insert_super(&self, super_: &SuperExpression, decl: &ClassDeclaration, scope_distance: usize) {
+        let entry = SymbolTableEntry{ decl: DeclRef::Class(NonNull::from(decl)), scope_distance };
+        self.symbols
+            .borrow_mut()
+            .insert(Symbol::Super(NonNull::from(super_)), entry);
+    }
+
+    pub fn insert_this(&self, this: &ThisExpression, decl: &ClassDeclaration, scope_distance: usize) {
+        let entry = SymbolTableEntry { decl: DeclRef::Class(NonNull::from(decl)), scope_distance };
+        self.symbols
+            .borrow_mut()
+            .insert(Symbol::This(NonNull::from(this)), entry);
+    }
+
+    pub fn insert_variable(&self, var: &Variable, decl: DeclRef, scope_distance: usize) {
+        let entry = SymbolTableEntry { decl, scope_distance };
+        self.symbols
+            .borrow_mut()
+            .insert(Symbol::Variable(NonNull::from(var)), entry);
+    }
+
+    fn get(&self, symbol: Symbol) -> Result<SymbolTableEntry, String> {
+        self.symbols
+            .borrow()
             .get(&symbol)
+            .cloned()
             .ok_or(format!("Internal error: '{}' was not found in symbol table", symbol.name()))
     }
 
