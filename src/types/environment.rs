@@ -41,4 +41,13 @@ impl TypeEnvironment {
     pub fn get_unknown(&self) -> Type {
         self.arena.unknown()
     }
+
+    pub fn lookup_type(&self, name: &str) -> Option<Type> {
+        match name {
+            "Number" => Some(self.get_number()),
+            "String" => Some(self.get_string()),
+            "Bool"   => Some(self.get_bool()),
+            _        => None, // no user-defined types yet
+        }
+    }
 }

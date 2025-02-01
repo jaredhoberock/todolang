@@ -3,6 +3,7 @@ pub mod lexer;
 pub mod parser;
 pub mod semantic_analyzer;
 pub mod source_location;
+pub mod symbol_table;
 pub mod syntax;
 pub mod token;
 pub mod types;

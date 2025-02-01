@@ -1,4 +1,5 @@
 use internment::Intern;
+use std::fmt;
 use std::ops::Deref;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -24,6 +25,17 @@ impl Deref for Type {
 
     fn deref(&self) -> &Self::Target {
         self.0.as_ref()
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match **self {
+            Kind::Number => write!(f, "Number"),
+            Kind::String => write!(f, "String"),
+            Kind::Bool   => write!(f, "Bool"),
+            Kind::Unknown => write!(f, "Unknown"),
+        }
     }
 }
 

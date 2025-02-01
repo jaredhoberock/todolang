@@ -1,132 +1,42 @@
 use std::collections::HashMap;
-use std::ptr::NonNull;
+use std::fmt;
 
+use crate::symbol_table::{DeclRef, SymbolTable};
 use crate::syntax::*;
-use crate::types::TypeChecker;
+use crate::types::{TypeChecker,TypeError};
 
-#[derive(Copy, Clone)]
-enum DeclRef {
-    BuiltinFunction,
-    Class(NonNull<ClassDeclaration>),
-    Function,
-    Parameter,
-    Variable,
+#[derive(Debug, PartialEq, Eq)]
+pub enum SemanticError {
+    Message(String),
+    Type(TypeError),
 }
 
-impl DeclRef {
-    fn into_class_decl<'a>(&self) -> Option<&'a ClassDeclaration> {
-        match &self {
-            // SAFETY: the AST outlives the SymbolTable
-            Self::Class(ptr) => Some(unsafe { &ptr.as_ref() }),
-            _ => None,
-        }
-    }
-}
-
-struct SymbolTableEntry {
-    decl: DeclRef,
-    scope_distance: usize,
-}
-
-#[derive(Eq, Hash, PartialEq)]
-enum Symbol {
-    Subclass(NonNull<ClassDeclaration>),
-    Super(NonNull<SuperExpression>),
-    This(NonNull<ThisExpression>),
-    Variable(NonNull<Variable>),
-}
-
-impl Symbol {
-    pub fn from_super(super_: &SuperExpression) -> Self {
-        Self::Super(NonNull::from(super_))
-    }
-
-    pub fn from_subclass(subclass: &ClassDeclaration) -> Self {
-        Self::Subclass(NonNull::from(subclass))
-    }
-
-    pub fn from_this(this: &ThisExpression) -> Self {
-        Self::This(NonNull::from(this))
-    }
-
-    pub fn from_variable(var: &Variable) -> Self {
-        Self::Variable(NonNull::from(var))
-    }
-
-    pub fn name(&self) -> &str {
+impl fmt::Display for SemanticError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Symbol::Subclass(subclass) => unsafe { &subclass.as_ref().name.lexeme},
-            Symbol::Super(_) => "super",
-            Symbol::This(_) => "this",
-            Symbol::Variable(var) => unsafe { &var.as_ref().name.lexeme},
+            SemanticError::Message(msg) => write!(f, "{}", msg),
+            SemanticError::Type(err) => write!(f, "{}", err),
         }
     }
 }
 
-struct SymbolTable {
-    symbols: HashMap<Symbol, SymbolTableEntry>,
-}
-
-impl SymbolTable {
-    pub fn new() -> Self {
-        Self { 
-            symbols: HashMap::new(),
-        }
-    }
-
-    pub fn insert_superclass(&mut self, subclass: &ClassDeclaration, superclass: &ClassDeclaration, scope_distance: usize) {
-        let entry = SymbolTableEntry{ decl: DeclRef::Class(NonNull::from(superclass)), scope_distance };
-        self.symbols.insert(Symbol::Subclass(NonNull::from(subclass)), entry);
-    }
-
-    pub fn insert_super(&mut self, super_: &SuperExpression, decl: &ClassDeclaration, scope_distance: usize) {
-        let entry = SymbolTableEntry{ decl: DeclRef::Class(NonNull::from(decl)), scope_distance };
-        self.symbols.insert(Symbol::Super(NonNull::from(super_)), entry);
-    }
-
-    pub fn insert_this(&mut self, this: &ThisExpression, decl: &ClassDeclaration, scope_distance: usize) {
-        let entry = SymbolTableEntry { decl: DeclRef::Class(NonNull::from(decl)), scope_distance };
-        self.symbols.insert(Symbol::This(NonNull::from(this)), entry);
-    }
-
-    pub fn insert_variable(&mut self, var: &Variable, decl: DeclRef, scope_distance: usize) {
-        let entry = SymbolTableEntry { decl, scope_distance };
-        self.symbols.insert(Symbol::Variable(NonNull::from(var)), entry);
-    }
-
-    fn get(&self, symbol: Symbol) -> Result<&SymbolTableEntry, String> {
-        self.symbols
-            .get(&symbol)
-            .ok_or(format!("Internal error: '{}' was not found in symbol table", symbol.name()))
-    }
-
-    pub fn get_superclass(&self, subclass: &ClassDeclaration) -> Result<(&ClassDeclaration, usize), String> {
-        let entry = self.get(Symbol::from_subclass(subclass))?;
-        let class_decl = entry.decl.into_class_decl()
-            .ok_or("Internal error: super class mapped to non-class declaration")?;
-        Ok((class_decl, entry.scope_distance))
-    }
-
-    pub fn get_super(&self, super_: &SuperExpression) -> Result<(&ClassDeclaration, usize), String> {
-        let entry = self.get(Symbol::from_super(super_))?;
-        let class_decl = entry.decl.into_class_decl()
-            .ok_or("Internal error: super expression mapped to non-class declaration")?;
-        Ok((class_decl, entry.scope_distance))
-    }
-
-    pub fn get_this(&self, this: &ThisExpression) -> Result<(&ClassDeclaration, usize), String> {
-        let entry = self.get(Symbol::from_this(this))?;
-        let class_decl = entry.decl.into_class_decl()
-            .ok_or("Internal error: this expression mapped to non-class declaration")?;
-        Ok((class_decl, entry.scope_distance))
-    }
-
-    pub fn get_variable(&self, var: &Variable) -> Result<(DeclRef, usize), String> {
-        let entry = self.get(Symbol::from_variable(var))?;
-        Ok((entry.decl, entry.scope_distance))
+impl From<TypeError> for SemanticError {
+    fn from(err: TypeError) -> Self {
+        SemanticError::Type(err)
     }
 }
 
+impl From<String> for SemanticError {
+    fn from(msg: String) -> Self {
+        SemanticError::Message(msg)
+    }
+}
+
+impl From<&str> for SemanticError {
+    fn from(msg: &str) -> Self {
+        SemanticError::Message(msg.to_string())
+    }
+}
 
 #[derive(PartialEq)]
 enum ClassKind {
@@ -181,56 +91,56 @@ impl LexicalScope {
         result
     }
 
-    fn assert_name_is_unique(&self, name: &str) -> Result<(), String> {
+    fn assert_name_is_unique(&self, name: &str) -> Result<(), SemanticError> {
         if self.declarations.contains_key(name) {
-            return Err(format!("'{}' is already declared in this scope", name));
+            return Err(From::from(format!("'{}' is already declared in this scope", name)));
         }
         Ok(())
     }
 
-    fn insert(&mut self, name: &str, is_defined: bool, decl: DeclRef) -> Result<(),String> {
+    fn insert(&mut self, name: &str, is_defined: bool, decl: DeclRef) -> Result<(),SemanticError> {
         self.assert_name_is_unique(name)?;
         self.declarations.insert(name.to_string(), LexicalScopeEntry { is_defined, decl });
         Ok(())
     }
 
-    fn define(&mut self, name: &str) -> Result<(),String> {
+    fn define(&mut self, name: &str) -> Result<(),SemanticError> {
         if let Some(entry) = self.declarations.get_mut(name) {
             if entry.is_defined {
-                return Err(format!("Internal error: cannot redefine '{}'", name))
+                return Err(From::from(format!("Internal error: cannot redefine '{}'", name)))
             }
             entry.is_defined = true;
             Ok(())
         } else {
-            Err(format!("Internal error: cannot define '{}' before declaration", name))
+            Err(From::from(format!("Internal error: cannot define '{}' before declaration", name)))
         }
     }
 
-    fn declare_builtin_function(&mut self, name: &str) -> Result<(),String> {
+    fn declare_builtin_function(&mut self, name: &str) -> Result<(),SemanticError> {
         self.insert(&name, false, DeclRef::BuiltinFunction)
     }
 
-    fn declare_class(&mut self, decl: &ClassDeclaration) -> Result<(),String> {
+    fn declare_class(&mut self, decl: &ClassDeclaration) -> Result<(),SemanticError> {
         self.insert(&decl.name.lexeme, false, DeclRef::Class(From::from(decl)))
     }
 
-    fn declare_and_define_function(&mut self, decl: &FunctionDeclaration) -> Result<(), String> {
+    fn declare_and_define_function(&mut self, decl: &FunctionDeclaration) -> Result<(),SemanticError> {
         self.insert(&decl.name.lexeme, true, DeclRef::Function)
     }
 
-    fn declare_and_define_parameter(&mut self, decl: &ParameterDeclaration) -> Result<(), String> {
+    fn declare_and_define_parameter(&mut self, decl: &ParameterDeclaration) -> Result<(),SemanticError> {
         self.insert(&decl.name.lexeme, true, DeclRef::Parameter)
     }
 
-    fn declare_and_define_super(&mut self, decl: &ClassDeclaration) -> Result<(), String> {
+    fn declare_and_define_super(&mut self, decl: &ClassDeclaration) -> Result<(),SemanticError> {
         self.insert("super", true, DeclRef::Class(From::from(decl)))
     }
 
-    fn declare_and_define_this(&mut self, decl: &ClassDeclaration) -> Result<(), String> {
+    fn declare_and_define_this(&mut self, decl: &ClassDeclaration) -> Result<(),SemanticError> {
         self.insert("this", true, DeclRef::Class(From::from(decl)))
     }
 
-    fn declare_variable(&mut self, decl: &VariableDeclaration) -> Result<(), String> {
+    fn declare_variable(&mut self, decl: &VariableDeclaration) -> Result<(),SemanticError> {
         self.insert(&decl.name.lexeme, false, DeclRef::Variable)
     }
 }
@@ -259,8 +169,8 @@ impl SemanticAnalyzer {
         &mut self,
         condition: bool,
         kind: LexicalScopeKind,
-        f: impl FnOnce(&mut Self) -> Result<T, String>,
-    ) -> Result<T, String> {
+        f: impl FnOnce(&mut Self) -> Result<T,SemanticError>,
+    ) -> Result<T,SemanticError> {
         if condition {
             self.scopes.push(LexicalScope::new(kind));
         }
@@ -276,8 +186,8 @@ impl SemanticAnalyzer {
     fn with_new_scope<T>(
         &mut self,
         kind: LexicalScopeKind,
-        f: impl FnOnce(&mut Self) -> Result<T, String>,
-    ) -> Result<T, String> {
+        f: impl FnOnce(&mut Self) -> Result<T,SemanticError>,
+    ) -> Result<T,SemanticError> {
         self.with_new_scope_if(true, kind, f)
     }
 
@@ -347,7 +257,7 @@ impl SemanticAnalyzer {
         ))
     }
 
-    fn resolve_super(&mut self, super_: &SuperExpression) -> Result<(), String> {
+    fn resolve_super(&mut self, super_: &SuperExpression) -> Result<(), SemanticError> {
         let (decl, scope_distance) = self.resolve_name("super")?;
         let class = decl.into_class_decl()
             .ok_or("Internal error: 'super' resolved to something other than a ClassDeclaration")?;
@@ -355,7 +265,7 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn resolve_this(&mut self, this: &ThisExpression) -> Result<(), String> {
+    fn resolve_this(&mut self, this: &ThisExpression) -> Result<(), SemanticError> {
         let (decl, scope_distance) = self.resolve_name("this")?;
         let class = decl.into_class_decl()
             .ok_or("Internal error: 'this' resolved to something other than a ClassDeclaration")?;
@@ -363,17 +273,17 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn resolve_variable(&mut self, var: &Variable) -> Result<(), String> {
+    fn resolve_variable(&mut self, var: &Variable) -> Result<(), SemanticError> {
         let (decl, scope_distance) = self.resolve_name(&var.name.lexeme)?;
         self.symbol_table.insert_variable(var, decl, scope_distance);
         Ok(())
     }
 
-    fn analyze_literal_expression(&mut self, _: &LiteralExpression) -> Result<(), String> {
+    fn analyze_literal_expression(&mut self, _: &LiteralExpression) -> Result<(), SemanticError> {
         Ok(())
     }
 
-    fn analyze_expression(&mut self, expr: &Expression) -> Result<(), String> {
+    fn analyze_expression(&mut self, expr: &Expression) -> Result<(), SemanticError> {
         match expr {
             Expression::Assignment(a) => self.analyze_assignment_expression(a),
             Expression::Binary(b) => self.analyze_binary_expression(b),
@@ -391,21 +301,23 @@ impl SemanticAnalyzer {
         }?;
 
         // check the type of the expression
-        self.type_checker.check_expression(expr).map(|_| ())
+        self.type_checker.check_expression(expr)
+            .map(drop)
+            .map_err(Into::into)
     }
 
-    fn analyze_assignment_expression(&mut self, expr: &AssignmentExpression) -> Result<(), String> {
+    fn analyze_assignment_expression(&mut self, expr: &AssignmentExpression) -> Result<(), SemanticError> {
         // XXX TODO type check 
         self.analyze_expression(&expr.expr)?;
         self.analyze_variable(&expr.var)
     }
 
-    fn analyze_binary_expression(&mut self, expr: &BinaryExpression) -> Result<(), String> {
+    fn analyze_binary_expression(&mut self, expr: &BinaryExpression) -> Result<(), SemanticError> {
         self.analyze_expression(&expr.left_expr)?;
         self.analyze_expression(&expr.right_expr)
     }
 
-    fn analyze_call_expression(&mut self, call: &CallExpression) -> Result<(), String> {
+    fn analyze_call_expression(&mut self, call: &CallExpression) -> Result<(), SemanticError> {
         // XXX TODO check that callee is a function
         self.analyze_expression(&call.callee)?;
         for arg in &call.arguments {
@@ -414,20 +326,20 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn analyze_get_expression(&mut self, expr: &GetExpression) -> Result<(), String> {
+    fn analyze_get_expression(&mut self, expr: &GetExpression) -> Result<(), SemanticError> {
         self.analyze_expression(&expr.object)
     }
 
-    fn analyze_grouping_expression(&mut self, expr: &GroupingExpression) -> Result<(), String> {
+    fn analyze_grouping_expression(&mut self, expr: &GroupingExpression) -> Result<(), SemanticError> {
         self.analyze_expression(&expr.expr)
     }
 
-    fn analyze_logical_expression(&mut self, expr: &LogicalExpression) -> Result<(), String> {
+    fn analyze_logical_expression(&mut self, expr: &LogicalExpression) -> Result<(), SemanticError> {
         self.analyze_expression(&expr.left_expr)?;
         self.analyze_expression(&expr.right_expr)
     }
 
-    fn analyze_match_expression(&mut self, expr: &MatchExpression) -> Result<(), String> {
+    fn analyze_match_expression(&mut self, expr: &MatchExpression) -> Result<(), SemanticError> {
         self.analyze_expression(&expr.scrutinee)?;
         for arm in &expr.arms {
             self.analyze_match_arm(arm)?;
@@ -435,56 +347,67 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn analyze_match_arm(&mut self, arm: &MatchArm) -> Result<(), String> {
+    fn analyze_match_arm(&mut self, arm: &MatchArm) -> Result<(), SemanticError> {
         self.with_new_scope(LexicalScopeKind::MatchArm, |slf| {
           slf.analyze_pattern(&arm.pattern)?;
           slf.analyze_expression(&arm.expr)
         })
     }
 
-    fn analyze_pattern(&mut self, pattern: &Pattern) -> Result<(), String> {
+    fn analyze_pattern(&mut self, pattern: &Pattern) -> Result<(), SemanticError> {
         match pattern {
             Pattern::Literal(l) => self.analyze_literal_pattern(l),
             Pattern::Underscore => Ok(())
         }
     }
 
-    fn analyze_literal_pattern(&mut self, _lit: &LiteralPattern) -> Result<(), String> {
+    fn analyze_literal_pattern(&mut self, _lit: &LiteralPattern) -> Result<(), SemanticError> {
       Ok(())
     }
 
-    fn analyze_set_expression(&mut self, set: &SetExpression) -> Result<(), String> {
+    fn analyze_set_expression(&mut self, set: &SetExpression) -> Result<(), SemanticError> {
         // XXX TODO type check
         self.analyze_expression(&set.value)?;
         self.analyze_expression(&*set.object)
     }
 
-    fn analyze_super_expression(&mut self, super_: &SuperExpression) -> Result<(), String> {
+    fn analyze_super_expression(&mut self, super_: &SuperExpression) -> Result<(), SemanticError> {
         match self.innermost_class_scope() {
             Some(scope) if matches!(scope.kind, LexicalScopeKind::Class(ClassKind::Subclass)) => {
-                self.resolve_super(&super_)
+                self.resolve_super(&super_).map_err(Into::into)
             }
-            Some(_) => Err("Can't user 'super' in a class with no superclass.".to_string()),
-            None => Err("Can't use 'super' outside of a class.".to_string()),
+            Some(_) => Err(From::from("Can't user 'super' in a class with no superclass.")),
+            None => Err(From::from("Can't use 'super' outside of a class.")),
         }
     }
 
-    fn analyze_this_expression(&mut self, this: &ThisExpression) -> Result<(), String> {
+    fn analyze_this_expression(&mut self, this: &ThisExpression) -> Result<(), SemanticError> {
         if !self.is_inside_class() {
-            return Err("Can't use 'this' outside of a class".to_string());
+            return Err(From::from("Can't use 'this' outside of a class"));
         }
-        self.resolve_this(&this)
+        self.resolve_this(&this).map_err(From::from)
     }
 
-    fn analyze_unary_expression(&mut self, expr: &UnaryExpression) -> Result<(), String> {
+    fn analyze_unary_expression(&mut self, expr: &UnaryExpression) -> Result<(), SemanticError> {
         self.analyze_expression(&expr.expr)
     }
 
-    fn analyze_variable(&mut self, var: &Variable) -> Result<(), String> {
+    fn analyze_variable(&mut self, var: &Variable) -> Result<(), SemanticError> {
         self.resolve_variable(&var)
     }
 
-    fn analyze_declaration(&mut self, decl: &Declaration) -> Result<(), String> {
+    fn analyze_type_expression(&mut self, expr: &TypeExpression) -> Result<(), SemanticError> {
+        self.type_checker
+            .check_type_expression(expr)
+            .map(drop)
+            .map_err(From::from)
+    }
+
+    fn analyze_type_ascription(&mut self, ascription: &TypeAscription) -> Result<(), SemanticError> {
+        self.analyze_type_expression(&ascription.expr)
+    }
+
+    fn analyze_declaration(&mut self, decl: &Declaration) -> Result<(), SemanticError> {
         match decl {
             Declaration::Class(c) => self.analyze_class_declaration(c),
             Declaration::Function(f) => self.analyze_function_declaration(f, FunctionKind::Normal),
@@ -492,13 +415,13 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn analyze_class_declaration(&mut self, class: &ClassDeclaration) -> Result<(), String> {
+    fn analyze_class_declaration(&mut self, class: &ClassDeclaration) -> Result<(), SemanticError> {
         self.current_scope_mut()?.declare_class(class)?;
 
         // Handle superclass if present
         let superdecl = match &class.superclass {
             Some(superclass_name) if superclass_name.lexeme == class.name.lexeme => {
-                return Err("A class can't inherit from itself.".to_string());
+                return Err(From::from("A class can't inherit from itself."));
             }
             Some(superclass_name) => {
                 let (decl, scope_distance) = self.resolve_name(&superclass_name.lexeme)?;
@@ -540,7 +463,7 @@ impl SemanticAnalyzer {
     fn analyze_function_declaration(
         &mut self, 
         decl: &FunctionDeclaration,
-        kind: FunctionKind) -> Result<(), String> {
+        kind: FunctionKind) -> Result<(), SemanticError> {
         self.current_scope_mut()?.declare_and_define_function(&decl)?;
         self.with_new_scope(LexicalScopeKind::Function(kind), |slf| {
             for param in &decl.parameters {
@@ -550,32 +473,32 @@ impl SemanticAnalyzer {
         })
     }
 
-    fn analyze_parameter_declaration(&mut self, decl: &ParameterDeclaration) -> Result<(), String> {
+    fn analyze_parameter_declaration(&mut self, decl: &ParameterDeclaration) -> Result<(), SemanticError> {
         self.current_scope_mut()?.declare_and_define_parameter(decl)
     }
 
-    fn analyze_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<(), String> {
+    fn analyze_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<(), SemanticError> {
         self.current_scope_mut()?.declare_variable(decl)?;
 
-        // XXX TODO analyze ascription
-        //if let Some(ascription) = &decl.type_ascription {
-        //    self.analyze_type_ascription(ascription)?;
-        //}
+        if let Some(ascription) = &decl.ascription {
+            self.analyze_type_ascription(ascription)?;
+        }
 
         if let Some(init) = &decl.initializer {
             self.analyze_expression(init)?;
         }
-        self.current_scope_mut()?.define(&decl.name.lexeme)
+        self.current_scope_mut()?.define(&decl.name.lexeme)?;
 
-        // XXX TODO type check 
-        //self.type_checker.check_variable_declaration(self.symbol_table, decl)
+        self.type_checker.check_variable_declaration(decl)
+            .map(drop)
+            .map_err(From::from)
     }
 
-    fn analyze_assert_statement(&mut self, stmt: &AssertStatement) -> Result<(), String> {
+    fn analyze_assert_statement(&mut self, stmt: &AssertStatement) -> Result<(), SemanticError> {
         self.analyze_expression(&stmt.expr)
     }
 
-    fn analyze_block_statement(&mut self, block: &BlockStatement) -> Result<(), String> {
+    fn analyze_block_statement(&mut self, block: &BlockStatement) -> Result<(), SemanticError> {
         self.with_new_scope(LexicalScopeKind::Block, |slf| {
             for stmt in &block.statements {
                 slf.analyze_statement(stmt)?;
@@ -584,11 +507,11 @@ impl SemanticAnalyzer {
         })
     }
 
-    fn analyze_expression_statement(&mut self, stmt: &ExpressionStatement) -> Result<(), String> {
+    fn analyze_expression_statement(&mut self, stmt: &ExpressionStatement) -> Result<(), SemanticError> {
         self.analyze_expression(&stmt.expr)
     }
 
-    fn analyze_for_statement(&mut self, stmt: &ForStatement) -> Result<(), String> {
+    fn analyze_for_statement(&mut self, stmt: &ForStatement) -> Result<(), SemanticError> {
         if let Some(initializer) = &stmt.initializer {
             self.analyze_statement(&*initializer)?;
         }
@@ -601,7 +524,7 @@ impl SemanticAnalyzer {
         self.analyze_statement(&*stmt.body)
     }
 
-    fn analyze_if_statement(&mut self, stmt: &IfStatement) -> Result<(), String> {
+    fn analyze_if_statement(&mut self, stmt: &IfStatement) -> Result<(), SemanticError> {
         self.analyze_expression(&stmt.condition)?;
         self.analyze_statement(&*stmt.then_branch)?;
         if let Some(else_branch) = &stmt.else_branch {
@@ -610,18 +533,18 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn analyze_print_statement(&mut self, stmt: &PrintStatement) -> Result<(), String> {
+    fn analyze_print_statement(&mut self, stmt: &PrintStatement) -> Result<(), SemanticError> {
         self.analyze_expression(&stmt.expr)
     }
 
-    fn analyze_return_statement(&mut self, stmt: &ReturnStatement) -> Result<(), String> {
+    fn analyze_return_statement(&mut self, stmt: &ReturnStatement) -> Result<(), SemanticError> {
         if !self.is_inside_function() {
-            return Err("Cannot return from outside of a function.".to_string());
+            return Err(From::from("Cannot return from outside of a function."));
         }
 
         if self.is_inside_initializer() {
             if stmt.expr.is_some() {
-                return Err("Can't return a value from an initializer.".to_string());
+                return Err(From::from("Can't return a value from an initializer."));
             }
         }
 
@@ -632,12 +555,12 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn analyze_while_statement(&mut self, stmt: &WhileStatement) -> Result<(), String> {
+    fn analyze_while_statement(&mut self, stmt: &WhileStatement) -> Result<(), SemanticError> {
         self.analyze_expression(&stmt.condition)?;
         self.analyze_statement(&*stmt.body)
     }
 
-    fn analyze_statement(&mut self, stmt: &Statement) -> Result<(), String> {
+    fn analyze_statement(&mut self, stmt: &Statement) -> Result<(), SemanticError> {
         match stmt {
             Statement::Assert(a) => self.analyze_assert_statement(a),
             Statement::Block(b) => self.analyze_block_statement(b),
@@ -651,10 +574,10 @@ impl SemanticAnalyzer {
         }
     }
 
-    pub fn analyze_global_statement(&mut self, stmt: &Statement) -> Result<(), String> {
+    pub fn analyze_global_statement(&mut self, stmt: &Statement) -> Result<(), SemanticError> {
         if !(self.scopes.len() == 1 && self.scopes[0].kind == LexicalScopeKind::Global) {
             return Err(
-                "Internal error: expected single global scope before global statement.".to_string(),
+                From::from("Internal error: expected single global scope before global statement."),
             );
         }
 
@@ -663,11 +586,11 @@ impl SemanticAnalyzer {
         if self.scopes.len() == 1 && self.scopes[0].kind == LexicalScopeKind::Global {
             Ok(())
         } else {
-            Err("Internal error: expected single global scope after global statement.".to_string())
+            Err(From::from("Internal error: expected single global scope after global statement."))
         }
     }
 
-    pub fn analyze_program(&mut self, prog: &Program) -> Result<(), String> {
+    pub fn analyze_program(&mut self, prog: &Program) -> Result<(), SemanticError> {
         for stmt in &prog.statements {
             self.analyze_global_statement(stmt)?;
         }

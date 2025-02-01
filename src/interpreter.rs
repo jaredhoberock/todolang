@@ -940,7 +940,7 @@ impl Interpreter {
     }
 
     pub fn interpret_program(&mut self, prog: &Program) -> Result<(), String> {
-        self.sema.analyze_program(prog)?;
+        self.sema.analyze_program(prog).map_err(|e| format!("{}", e))?;
         for stmt in &prog.statements {
             self.interpret_statement(stmt)?;
         }
@@ -948,7 +948,7 @@ impl Interpreter {
     }
 
     pub fn interpret_global_statement(&mut self, stmt: &Statement) -> Result<(), String> {
-        self.sema.analyze_global_statement(stmt)?;
+        self.sema.analyze_global_statement(stmt).map_err(|e| format!("{}", e))?;
         self.interpret_statement(stmt)?;
         Ok(())
     }
