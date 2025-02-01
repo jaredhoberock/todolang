@@ -1,19 +1,11 @@
-use std::fmt;
-use super::types::Type; // Import `Type` from the `types` module
+use super::types::Type;
+use thiserror::Error;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum TypeError {
+    #[error("Unknown type: '{0}'")]
     UnknownType(String),
-    Mismatch { expected: Type, found: Type },
-}
 
-impl fmt::Display for TypeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TypeError::UnknownType(name) => write!(f, "Unknown type: '{}'", name),
-            TypeError::Mismatch { expected, found } => {
-                write!(f, "Type mismatch: expected '{}', found '{}'", expected, found)
-            }
-        }
-    }
+    #[error("Type mismatch: expected '{expected}', found '{found}'")]
+    Mismatch { expected: Type, found: Type },
 }

@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 internment = "0.7.0"
 restore_macros = { path = "./restore_macros" }
+thiserror = "1"
 enum_macros = { path = "./enum_macros" }
 
 [dev-dependencies]
