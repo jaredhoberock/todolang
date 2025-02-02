@@ -38,11 +38,9 @@ pub fn derive_ref(input: TokenStream) -> TokenStream {
    let name = &input.ident;
 
    let output = quote! {
-       use std::ptr::NonNull;
-
        #[derive(Copy, Clone, Eq, Hash, PartialEq)]
        pub enum #ref_name {
-           #(#variant_idents(NonNull<#variant_types>)),*
+           #(#variant_idents(::std::ptr::NonNull<#variant_types>)),*
        }
 
        // From impls for individual variant types
