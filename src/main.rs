@@ -39,7 +39,7 @@ fn interpret(source: String) -> Result<(),String> {
     let tokens: Vec<Token> = Lexer::new(&source).collect();
     let prog = parse_program(&tokens).map_err(|e| format_syntax_error(&e, &source))?;
     let mut interp = Interpreter::new();
-    interp.interpret_program(&prog).map_err(|e| format!("Runtime error: {}", e))
+    interp.interpret_program(&prog).map_err(|e| format!("{}", e))
 }
 
 fn interpret_from_file(filename: &str) -> Result<(),String> {
@@ -62,7 +62,7 @@ fn evaluate_global_statement(interp: &mut Interpreter, prog: &mut Program, sourc
     }?;
 
     interp.interpret_global_statement(stmt)
-        .map_err(|e| format!("Runtime error: {}", e))
+        .map_err(|e| format!("{}", e))
 }
 
 fn interpret_from_prompt() -> Result<(),String> {

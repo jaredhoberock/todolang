@@ -1,6 +1,6 @@
 use crate::token::*;
 use crate::syntax::FunctionDeclaration;
-use super::interpreter::Interpreter;
+use super::interpreter::{Error, Interpreter};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::ControlFlow;
@@ -59,7 +59,7 @@ impl Value {
         }
     }
 
-    pub fn evaluate_binary_operation(&self, op: &TokenKind, rhs: &Self) -> Result<Self, String> {
+    pub fn evaluate_binary_operation(&self, op: &TokenKind, rhs: &Self) -> Result<Self, Error> {
         use Value::*;
 
         match op {
@@ -73,17 +73,17 @@ impl Value {
             TokenKind::Plus => match (self, rhs) {
                 (Number(n1), Number(n2)) => Ok(Number(n1 + n2)),
                 (String(s1), String(s2)) => Ok(String(s1.clone() + &s2)),
-                (_, _) => Err("Operands must be two numbers or two strings.".to_string()),
+                (_, _) => Err("Operands must be two numbers or two strings.".into()),
             },
             TokenKind::Slash => match (self, rhs) {
                 (Number(n1), Number(n2)) => Ok(Number(n1 / n2)),
-                (_, _) => Err("Operands must be two numbers.".to_string()),
+                (_, _) => Err("Operands must be two numbers.".into()),
             },
             TokenKind::Star => match (self, rhs) {
                 (Number(n1), Number(n2)) => Ok(Number(n1 * n2)),
-                (_, _) => Err("Operands must be two numbers.".to_string()),
+                (_, _) => Err("Operands must be two numbers.".into()),
             },
-            _ => Err("Unexpected operator in binary operation".to_string()),
+            _ => Err("Unexpected operator in binary operation".into()),
         }
     }
 }
@@ -99,7 +99,7 @@ pub enum Callable {
     Class(Rc<Class>),
     Native(
         usize,
-        Rc<dyn Fn(&mut Interpreter, &Vec<Value>) -> Result<Value, String>>,
+        Rc<dyn Fn(&mut Interpreter, &Vec<Value>) -> Result<Value, Error>>,
     ),
     User(UserFunction),
 }
@@ -107,12 +107,12 @@ pub enum Callable {
 impl Callable {
     pub fn new_native_function<F>(arity: usize, func: F) -> Self
     where
-        F: Fn(&mut Interpreter, &Vec<Value>) -> Result<Value, String> + 'static,
+        F: Fn(&mut Interpreter, &Vec<Value>) -> Result<Value, Error> + 'static,
     {
         Self::Native(arity, Rc::new(func))
     }
 
-    pub fn call(&self, interp: &mut Interpreter, arguments: &Vec<Value>) -> Result<Value, String> {
+    pub fn call(&self, interp: &mut Interpreter, arguments: &Vec<Value>) -> Result<Value, Error> {
         match &self {
             Callable::Class(c) => c.call(interp, arguments),
             Callable::Native(_arity, f) => f(interp, arguments),
@@ -178,7 +178,7 @@ impl Instance {
         self.class.to_string() + " instance"
     }
 
-    pub fn get(&self, name: &Token) -> Result<Value, String> {
+    pub fn get(&self, name: &Token) -> Result<Value, Error> {
         if let Some(value) = self.fields.get(&name.lexeme) {
             return Ok(value.clone());
         }
@@ -186,7 +186,7 @@ impl Instance {
             .find_method(&name.lexeme)
             .and_then(|m| m.bind_this(self.self_rc.upgrade().unwrap()))
             .map(|m| m.as_value())
-            .map_err(|_| format!("Undefined property '{}'.", name.lexeme))
+            .map_err(|_| format!("Undefined property '{}'.", name.lexeme).into())
     }
 
     pub fn set(&mut self, name: &Token, value: &Value) -> Result<(), String> {
@@ -229,7 +229,7 @@ impl Class {
         })
     }
 
-    pub fn call(&self, interpreter: &mut Interpreter, arguments: &Vec<Value>) -> Result<Value, String> {
+    pub fn call(&self, interpreter: &mut Interpreter, arguments: &Vec<Value>) -> Result<Value, Error> {
         let class_rc = self.self_rc.upgrade().unwrap();
         let instance = Instance::new_shared(class_rc);
 
@@ -242,11 +242,11 @@ impl Class {
         Ok(Value::Instance(instance.clone()))
     }
 
-    pub fn find_method(&self, name: &String) -> Result<UserFunction, String> {
+    pub fn find_method(&self, name: &String) -> Result<UserFunction, Error> {
         match (self.methods.get(name), &self.superclass) {
             (Some(method), _) => Ok(method.clone()),
             (None, Some(superclass)) => superclass.find_method(name),
-            (None, None) => Err(format!("Undefined method '{}'", name)),
+            (None, None) => Err(format!("Undefined method '{}'", name).into()),
         }
     }
 
@@ -292,13 +292,13 @@ impl Environment {
         self.values.keys().map(|s| s.as_str()).collect()
     }
 
-    pub fn get_from_ancestor(&self, distance: usize, name: &str) -> Result<Value, String> {
+    pub fn get_from_ancestor(&self, distance: usize, name: &str) -> Result<Value, Error> {
         if distance == 0 {
             self.get(name)
         } else {
             match &self.enclosing {
                 Some(enclosing) => enclosing.borrow().get_from_ancestor(distance - 1, name),
-                None => Err("Internal error: ancestor not found.".to_string()),
+                None => Err("Internal error: ancestor not found.".into()),
             }
         }
     }
@@ -308,7 +308,7 @@ impl Environment {
         distance: usize,
         name: &str,
         value: &Value,
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         if distance == 0 {
             self.set(name, &value)
         } else {
@@ -318,35 +318,35 @@ impl Environment {
                         .borrow_mut()
                         .set_in_ancestor(distance - 1, name, value)
                 }
-                None => Err("Internal error: ancestor not found.".to_string()),
+                None => Err("Internal error: ancestor not found.".into()),
             }
         }
     }
 
-    fn get(&self, name: &str) -> Result<Value, String> {
+    fn get(&self, name: &str) -> Result<Value, Error> {
         if let Some(value) = self.values.get(name) {
             Ok(value.clone())
         } else if let Some(enclosing) = &self.enclosing {
             enclosing.borrow().get(name)
         } else {
-            Err(format!("Undefined variable '{}'.", name))
+            Err(format!("Undefined variable '{}'.", name).into())
         }
     }
 
-    fn set(&mut self, name: &str, value: &Value) -> Result<(), String> {
+    fn set(&mut self, name: &str, value: &Value) -> Result<(), Error> {
         if self.values.contains_key(name) {
             self.values.insert(name.to_string(), value.clone());
             Ok(())
         } else if let Some(enclosing) = &mut self.enclosing {
             enclosing.borrow_mut().set(name, value)
         } else {
-            Err(format!("Undefined variable '{}'.", name))
+            Err(format!("Undefined variable '{}'.", name).into())
         }
     }
 
-    pub fn define(&mut self, name: &str, value: &Value) -> Result<(), String> {
+    pub fn define(&mut self, name: &str, value: &Value) -> Result<(), Error> {
         if self.values.contains_key(name) {
-            Err(format!("Variable '{}' is already defined.", name))
+            Err(format!("Variable '{}' is already defined.", name).into())
         } else {
             self.values.insert(name.to_string(), value.clone());
             Ok(())
@@ -394,7 +394,7 @@ impl UserFunction {
         Value::Callable(callable)
     }
 
-    pub fn call(&self, interpreter: &mut Interpreter, args: &Vec<Value>) -> Result<Value, String> {
+    pub fn call(&self, interpreter: &mut Interpreter, args: &Vec<Value>) -> Result<Value, Error> {
         // create a new environment for the function call
         let env = Environment::new_shared_with_enclosing(self.closure.clone());
 
@@ -424,7 +424,7 @@ impl UserFunction {
         })
     }
 
-    pub fn bind_this(&self, this: Shared<Instance>) -> Result<Self, String> {
+    pub fn bind_this(&self, this: Shared<Instance>) -> Result<Self, Error> {
         // create a new environment for the bound method
         let env = Environment::new_shared_with_enclosing(self.closure.clone());
 

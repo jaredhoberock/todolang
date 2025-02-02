@@ -1,9 +1,37 @@
-use crate::semantic_analyzer::SemanticAnalyzer;
+use crate::semantic_analyzer::{SemanticAnalyzer, SemanticError};
 use crate::syntax::*;
 use crate::token::*;
 use super::environment::*;
 use std::collections::HashMap;
 use std::ops::ControlFlow;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Runtime error: {0}")]
+    Runtime(String),
+
+    #[error(transparent)]
+    Semantic(SemanticError),
+}
+
+impl From<String> for Error {
+    fn from(s: String) -> Self {
+        Error::Runtime(s)
+    }
+}
+
+impl From<&str> for Error {
+    fn from(s: &str) -> Self {
+        Error::Runtime(s.to_string())
+    }
+}
+
+impl From<SemanticError> for Error {
+    fn from(e: SemanticError) -> Self {
+        Error::Semantic(e)
+    }
+}
 
 pub struct Interpreter {
     sema: SemanticAnalyzer,
@@ -16,10 +44,10 @@ impl Interpreter {
 
         let clock_function = Callable::new_native_function(
             0, // arity
-            move |_, _| -> Result<Value, String> {
+            move |_, _| -> Result<Value, Error> {
                 let elapsed = program_started
                     .elapsed()
-                    .map_err(|e| e.to_string())?
+                    .map_err(|e| Error::Runtime(e.to_string()))?
                     .as_secs_f64();
                 Ok(Value::Number(elapsed))
             },
@@ -79,7 +107,7 @@ impl Interpreter {
         }
     }
 
-    fn interpret_literal_expression(&self, lit: &LiteralExpression) -> Result<Value, String> {
+    fn interpret_literal_expression(&self, lit: &LiteralExpression) -> Result<Value, Error> {
         Ok(match &lit.0 {
             Literal::Bool(b) => Value::Bool(*b),
             Literal::Nil => Value::Nil,
@@ -91,31 +119,18 @@ impl Interpreter {
     fn interpret_grouping_expression(
         &mut self,
         expr: &GroupingExpression,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, Error> {
         self.interpret_expression(&*expr.expr)
     }
 
-    fn interpret_logical_expression(&mut self, expr: &LogicalExpression) -> Result<Value, String> {
+    fn interpret_logical_expression(&mut self, expr: &LogicalExpression) -> Result<Value, Error> {
         let left = self.interpret_expression(&*expr.left_expr)?;
         match expr.op.kind {
-            TokenKind::Or => {
-                if left.as_bool() {
-                    return Ok(left);
-                }
-            }
-            TokenKind::And => {
-                if !left.as_bool() {
-                    return Ok(left);
-                }
-            }
-            _ => {
-                return Err(format!(
-                    "Unexpected '{}' in logical expression",
-                    expr.op.lexeme
-                ))
-            }
-        };
-        return self.interpret_expression(&*expr.right_expr);
+            TokenKind::Or if left.as_bool() => Ok(left),
+            TokenKind::And if !left.as_bool() => Ok(left),
+            TokenKind::Or | TokenKind::And => self.interpret_expression(&*expr.right_expr),
+            _ => Err(format!("Unexpected '{}' in logical expression", expr.op.lexeme).into()),
+        }
     }
 
     fn matches_pattern(&mut self, pattern: &Pattern, scrutinee: &Value) -> bool {
@@ -132,7 +147,7 @@ impl Interpreter {
         }
     }
 
-    fn interpret_match_expression(&mut self, expr: &MatchExpression) -> Result<Value, String> {
+    fn interpret_match_expression(&mut self, expr: &MatchExpression) -> Result<Value, Error> {
         let scrutinee = self.interpret_expression(&expr.scrutinee)?;
 
         for arm in &expr.arms {
@@ -141,21 +156,21 @@ impl Interpreter {
             }
         }
 
-        Err("No matching pattern found".to_string())
+        Err("No matching pattern found".into())
     }
 
-    fn interpret_binary_expression(&mut self, expr: &BinaryExpression) -> Result<Value, String> {
+    fn interpret_binary_expression(&mut self, expr: &BinaryExpression) -> Result<Value, Error> {
         let lhs = self.interpret_expression(&*expr.left_expr)?;
         let rhs = self.interpret_expression(&*expr.right_expr)?;
         lhs.evaluate_binary_operation(&expr.op.kind, &rhs)
     }
 
-    fn interpret_call_expression(&mut self, call: &CallExpression) -> Result<Value, String> {
+    fn interpret_call_expression(&mut self, call: &CallExpression) -> Result<Value, Error> {
         let value = self.interpret_expression(&*call.callee)?;
 
         let callee = match &value {
             Value::Callable(callee) => callee,
-            _ => return Err("Can only call functions and classes.".to_string()),
+            _ => return Err("Can only call functions and classes.".into()),
         };
 
         if call.arguments.len() != callee.arity() {
@@ -163,7 +178,7 @@ impl Interpreter {
                 "Expected {} arguments but got {}.",
                 callee.arity(),
                 call.arguments.len()
-            ));
+            ).into());
         }
 
         let mut arguments = Vec::new();
@@ -174,15 +189,15 @@ impl Interpreter {
         callee.call(self, &arguments)
     }
 
-    fn interpret_get_expression(&mut self, expr: &GetExpression) -> Result<Value, String> {
+    fn interpret_get_expression(&mut self, expr: &GetExpression) -> Result<Value, Error> {
         let object = self.interpret_expression(&expr.object)?;
         match object {
             Value::Instance(obj) => obj.borrow().get(&expr.name),
-            _ => Err("Only instances have properties.".to_string()),
+            _ => Err("Only instances have properties.".into()),
         }
     }
 
-    fn interpret_set_expression(&mut self, expr: &SetExpression) -> Result<Value, String> {
+    fn interpret_set_expression(&mut self, expr: &SetExpression) -> Result<Value, Error> {
         let mut object = self.interpret_expression(&expr.object)?;
         match &mut object {
             Value::Instance(obj) => {
@@ -190,11 +205,11 @@ impl Interpreter {
                 obj.borrow_mut().set(&expr.name, &value)?;
                 Ok(value)
             }
-            _ => Err("Only instances have properties.".to_string()),
+            _ => Err("Only instances have properties.".into()),
         }
     }
 
-    fn interpret_super_expression(&mut self, expr: &SuperExpression) -> Result<Value, String> {
+    fn interpret_super_expression(&mut self, expr: &SuperExpression) -> Result<Value, Error> {
         // look up the value of "super" and get which ancestor we found it in
         let ancestor = self.sema.super_scope_distance(expr)?;
         let superclass = match self
@@ -221,23 +236,23 @@ impl Interpreter {
             .map(|m| Value::Callable(Callable::User(m)))
     }
 
-    fn interpret_this_expression(&mut self, this: &ThisExpression) -> Result<Value, String> {
+    fn interpret_this_expression(&mut self, this: &ThisExpression) -> Result<Value, Error> {
         let ancestor = self.sema.this_scope_distance(this)?;
         self.current_environment
             .borrow()
             .get_from_ancestor(ancestor, "this")
     }
 
-    fn interpret_unary_expression(&mut self, expr: &UnaryExpression) -> Result<Value, String> {
+    fn interpret_unary_expression(&mut self, expr: &UnaryExpression) -> Result<Value, Error> {
         let value = self.interpret_expression(&*expr.expr)?;
         match expr.op.kind {
             TokenKind::Bang => Ok(Value::Bool(!value.as_bool())),
             TokenKind::Minus => Ok(Value::Number(-value.as_f64()?)),
-            _ => Err("Bad operator in unary_expression".to_string()),
+            _ => Err("Bad operator in unary_expression".into()),
         }
     }
 
-    fn interpret_variable(&mut self, var: &Variable) -> Result<Value, String> {
+    fn interpret_variable(&mut self, var: &Variable) -> Result<Value, Error> {
         let ancestor = self.sema.variable_scope_distance(var)?;
         self.current_environment
             .borrow()
@@ -247,7 +262,7 @@ impl Interpreter {
     fn interpret_assignment_expression(
         &mut self,
         expr: &AssignmentExpression,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, Error> {
         let value = self.interpret_expression(&*expr.expr)?;
         let ancestor = self.sema.variable_scope_distance(&expr.var)?;
         self.current_environment.borrow_mut().set_in_ancestor(
@@ -258,7 +273,7 @@ impl Interpreter {
         Ok(value)
     }
 
-    fn interpret_expression(&mut self, expr: &Expression) -> Result<Value, String> {
+    fn interpret_expression(&mut self, expr: &Expression) -> Result<Value, Error> {
         match expr {
             Expression::Assignment(expr) => self.interpret_assignment_expression(expr),
             Expression::Binary(expr) => self.interpret_binary_expression(expr),
@@ -276,7 +291,7 @@ impl Interpreter {
         }
     }
 
-    fn interpret_class_declaration(&mut self, decl: &ClassDeclaration) -> Result<(), String> {
+    fn interpret_class_declaration(&mut self, decl: &ClassDeclaration) -> Result<(), Error> {
         // get superclass if one is specified
         let superclass = match &decl.superclass {
             Some(superclassname) => {
@@ -287,7 +302,7 @@ impl Interpreter {
                     .get_from_ancestor(ancestor, &superclassname.lexeme)?
                 {
                     Value::Callable(Callable::Class(c)) => Some(c.clone()),
-                    _ => return Err("Superclass must be a class.".to_string()),
+                    _ => return Err("Superclass must be a class.".into()),
                 }
             },
             None => None,
@@ -296,7 +311,7 @@ impl Interpreter {
         // if a superclass is specified, interpret the following with an enclosed environment
         let class = self.with_enclosed_environment_if(
             superclass.is_some(),
-            |slf| -> Result<Value, String> {
+            |slf| -> Result<Value, Error> {
                 if let Some(s) = &superclass {
                     slf.current_environment
                         .borrow_mut()
@@ -326,7 +341,7 @@ impl Interpreter {
             .define(&decl.name.lexeme, &class)
     }
 
-    fn interpret_function_declaration(&mut self, decl: &FunctionDeclaration) -> Result<(), String> {
+    fn interpret_function_declaration(&mut self, decl: &FunctionDeclaration) -> Result<(), Error> {
         let function = UserFunction::new(decl, self.current_environment.clone(), false);
         let callable = Callable::User(function);
         self.current_environment
@@ -334,7 +349,7 @@ impl Interpreter {
             .define(&decl.name.lexeme, &Value::Callable(callable))
     }
 
-    fn interpret_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<(), String> {
+    fn interpret_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<(), Error> {
         let value = match &decl.initializer {
             Some(expr) => self.interpret_expression(expr)?,
             None => Value::Nil,
@@ -344,7 +359,7 @@ impl Interpreter {
             .define(&decl.name.lexeme, &value)
     }
 
-    fn interpret_declaration(&mut self, decl: &Declaration) -> Result<(), String> {
+    fn interpret_declaration(&mut self, decl: &Declaration) -> Result<(), Error> {
         match decl {
             Declaration::Class(c) => self.interpret_class_declaration(c),
             Declaration::Function(f) => self.interpret_function_declaration(f),
@@ -352,10 +367,10 @@ impl Interpreter {
         }
     }
 
-    fn interpret_assert_statement(&mut self, stmt: &AssertStatement) -> Result<(), String> {
+    fn interpret_assert_statement(&mut self, stmt: &AssertStatement) -> Result<(), Error> {
         let val = self.interpret_expression(&stmt.expr)?;
         if !val.as_bool() {
-            return Err("assert failed".to_string());
+            return Err("assert failed".into());
         }
         Ok(())
     }
@@ -363,7 +378,7 @@ impl Interpreter {
     pub(super) fn interpret_block_statement(
         &mut self,
         block: &BlockStatement,
-    ) -> Result<ControlFlow<Value>, String> {
+    ) -> Result<ControlFlow<Value>, Error> {
         self.with_enclosed_environment(|slf| {
             let mut result = Ok(ControlFlow::Continue(()));
             for stmt in &block.statements {
@@ -383,7 +398,7 @@ impl Interpreter {
         })
     }
 
-    fn interpret_expression_statement(&mut self, stmt: &ExpressionStatement) -> Result<(), String> {
+    fn interpret_expression_statement(&mut self, stmt: &ExpressionStatement) -> Result<(), Error> {
         self.interpret_expression(&stmt.expr)?;
         Ok(())
     }
@@ -391,7 +406,7 @@ impl Interpreter {
     fn interpret_for_statement(
         &mut self,
         stmt: &ForStatement,
-    ) -> Result<ControlFlow<Value>, String> {
+    ) -> Result<ControlFlow<Value>, Error> {
         self.with_enclosed_environment(|slf| {
             let mut result = Ok(ControlFlow::Continue(()));
 
@@ -423,7 +438,7 @@ impl Interpreter {
         })
     }
 
-    fn interpret_if_statement(&mut self, stmt: &IfStatement) -> Result<ControlFlow<Value>, String> {
+    fn interpret_if_statement(&mut self, stmt: &IfStatement) -> Result<ControlFlow<Value>, Error> {
         if self.interpret_expression(&stmt.condition)?.as_bool() {
             self.interpret_statement(&*stmt.then_branch)
         } else {
@@ -434,7 +449,7 @@ impl Interpreter {
         }
     }
 
-    fn interpret_print_statement(&mut self, stmt: &PrintStatement) -> Result<(), String> {
+    fn interpret_print_statement(&mut self, stmt: &PrintStatement) -> Result<(), Error> {
         let val = self.interpret_expression(&stmt.expr)?;
         println!("{}", val);
         Ok(())
@@ -443,7 +458,7 @@ impl Interpreter {
     fn interpret_return_statement(
         &mut self,
         stmt: &ReturnStatement,
-    ) -> Result<ControlFlow<Value>, String> {
+    ) -> Result<ControlFlow<Value>, Error> {
         let value = match &stmt.expr {
             Some(expr) => self.interpret_expression(expr)?,
             None => Value::Nil,
@@ -454,7 +469,7 @@ impl Interpreter {
     fn interpret_while_statement(
         &mut self,
         stmt: &WhileStatement,
-    ) -> Result<ControlFlow<Value>, String> {
+    ) -> Result<ControlFlow<Value>, Error> {
         let mut result = Ok(ControlFlow::Continue(()));
 
         while self.interpret_expression(&stmt.condition)?.as_bool() {
@@ -474,7 +489,7 @@ impl Interpreter {
         result
     }
 
-    fn interpret_statement(&mut self, stmt: &Statement) -> Result<ControlFlow<Value>, String> {
+    fn interpret_statement(&mut self, stmt: &Statement) -> Result<ControlFlow<Value>, Error> {
         match stmt {
             Statement::Block(block) => self.interpret_block_statement(block),
             Statement::For(f) => self.interpret_for_statement(f),
@@ -484,30 +499,30 @@ impl Interpreter {
 
             // map the results of other statements to ControlFlow::Continue
             _ => match stmt {
-                Statement::Block(_) => Err("Impossible statement".to_string()),
+                Statement::Block(_) => Err("Impossible statement".into()),
                 Statement::Assert(assert) => self.interpret_assert_statement(assert),
                 Statement::Decl(decl) => self.interpret_declaration(decl),
                 Statement::Expr(expr) => self.interpret_expression_statement(expr),
-                Statement::For(_) => Err("Impossible statement".to_string()),
-                Statement::If(_) => Err("Impossible statement".to_string()),
+                Statement::For(_) => Err("Impossible statement".into()),
+                Statement::If(_) => Err("Impossible statement".into()),
                 Statement::Print(print) => self.interpret_print_statement(print),
-                Statement::Return(_) => Err("Impossible statement".to_string()),
-                Statement::While(_) => Err("Impossible statement".to_string()),
+                Statement::Return(_) => Err("Impossible statement".into()),
+                Statement::While(_) => Err("Impossible statement".into()),
             }
             .map(|_| ControlFlow::Continue(())),
         }
     }
 
-    pub fn interpret_program(&mut self, prog: &Program) -> Result<(), String> {
-        self.sema.analyze_program(prog).map_err(|e| format!("{}", e))?;
+    pub fn interpret_program(&mut self, prog: &Program) -> Result<(), Error> {
+        self.sema.analyze_program(prog).map_err(|e| Error::Semantic(e))?;
         for stmt in &prog.statements {
             self.interpret_statement(stmt)?;
         }
         Ok(())
     }
 
-    pub fn interpret_global_statement(&mut self, stmt: &Statement) -> Result<(), String> {
-        self.sema.analyze_global_statement(stmt).map_err(|e| format!("{}", e))?;
+    pub fn interpret_global_statement(&mut self, stmt: &Statement) -> Result<(), Error> {
+        self.sema.analyze_global_statement(stmt).map_err(|e| Error::Semantic(e))?;
         self.interpret_statement(stmt)?;
         Ok(())
     }

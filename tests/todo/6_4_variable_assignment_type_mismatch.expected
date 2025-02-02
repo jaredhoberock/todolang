@@ -1,1 +1,1 @@
-Runtime error: Type mismatch: expected 'String', found 'Number'
+Type mismatch: expected 'String', found 'Number'
