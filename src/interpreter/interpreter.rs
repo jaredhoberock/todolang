@@ -1,4 +1,5 @@
-use crate::semantic_analyzer::{SemanticAnalyzer, SemanticError};
+use crate::semantic_analyzer::Error as SemanticError;
+use crate::semantic_analyzer::SemanticAnalyzer;
 use crate::syntax::*;
 use crate::token::*;
 use super::environment::*;
