@@ -1,4 +1,4 @@
-use crate::symbol_table::{DeclRef, SymbolTable};
+use crate::symbol_table::{NamedEntity, SymbolTable};
 use crate::syntax::*;
 use crate::types::{TypeChecker,TypeError};
 use std::collections::HashMap;
@@ -58,7 +58,7 @@ enum LexicalScopeKind {
 
 struct LexicalScopeEntry {
     is_defined: bool,
-    decl: DeclRef,
+    entity: NamedEntity,
 }
 
 // a LexicalScope is a collection of declarations
@@ -93,9 +93,9 @@ impl LexicalScope {
         Ok(())
     }
 
-    fn insert(&mut self, name: &str, is_defined: bool, decl: DeclRef) -> Result<(),SemanticError> {
+    fn insert(&mut self, name: &str, is_defined: bool, entity: NamedEntity) -> Result<(),SemanticError> {
         self.assert_name_is_unique(name)?;
-        self.declarations.insert(name.to_string(), LexicalScopeEntry { is_defined, decl });
+        self.declarations.insert(name.to_string(), LexicalScopeEntry { is_defined, entity });
         Ok(())
     }
 
@@ -114,31 +114,31 @@ impl LexicalScope {
     }
     
     fn declare_builtin_function(&mut self, name: &str) -> Result<(),SemanticError> {
-        self.insert(&name, false, DeclRef::BuiltinFunction)
+        self.insert(&name, false, NamedEntity::BuiltinFunction)
     }
 
     fn declare_class(&mut self, decl: &ClassDeclaration) -> Result<(),SemanticError> {
-        self.insert(&decl.name.lexeme, false, DeclRef::Class(Into::into(decl)))
+        self.insert(&decl.name.lexeme, false, NamedEntity::Declaration(decl.into()))
     }
 
     fn declare_and_define_function(&mut self, decl: &FunctionDeclaration) -> Result<(),SemanticError> {
-        self.insert(&decl.name.lexeme, true, DeclRef::Function)
+        self.insert(&decl.name.lexeme, true, NamedEntity::Declaration(decl.into()))
     }
 
     fn declare_and_define_parameter(&mut self, decl: &ParameterDeclaration) -> Result<(),SemanticError> {
-        self.insert(&decl.name.lexeme, true, DeclRef::Parameter)
+        self.insert(&decl.name.lexeme, true, NamedEntity::Parameter)
     }
 
     fn declare_and_define_super(&mut self, decl: &ClassDeclaration) -> Result<(),SemanticError> {
-        self.insert("super", true, DeclRef::Class(Into::into(decl)))
+        self.insert("super", true, NamedEntity::Declaration(decl.into()))
     }
 
     fn declare_and_define_this(&mut self, decl: &ClassDeclaration) -> Result<(),SemanticError> {
-        self.insert("this", true, DeclRef::Class(Into::into(decl)))
+        self.insert("this", true, NamedEntity::Declaration(decl.into()))
     }
 
     fn declare_variable(&mut self, decl: &VariableDeclaration) -> Result<(),SemanticError> {
-        self.insert(&decl.name.lexeme, false, DeclRef::Variable)
+        self.insert(&decl.name.lexeme, false, NamedEntity::Declaration(decl.into()))
     }
 }
 
@@ -232,21 +232,21 @@ impl SemanticAnalyzer {
             .expect("Internal compiler error: called current_scope_mut outside of a scope")
     }
 
-    // name resolution searches the stack of scopes for a declaration of the given name
-    // if such a declaration exists, it returns a pair of
-    // 1. A reference to the declaration, and
-    // 2. the distance to the scope containing that declaration
-    fn resolve_name(&self, name: &str) -> Result<(DeclRef, usize), SemanticError> {
+    // name resolution searches the stack of scopes for a binding of the given name to some entity
+    // if such a binding exists, it returns the pair
+    // 1. A reference to the entity, and
+    // 2. the distance to the scope containing that entity
+    fn resolve_name(&self, name: &str) -> Result<(NamedEntity, usize), SemanticError> {
         if self.scopes.is_empty() {
             panic!("Internal compiler error: cannot resolve name '{}' outside of a scope", name);
         }
 
         // look through each scope, starting at the top of
-        // the stack for a declaration for name, and note
+        // the stack for a binding for name, and note
         // the location of its scope if found
         for (i, scope) in self.scopes.iter().enumerate().rev() {
             if let Some(entry) = scope.declarations.get(name) {
-                return Ok((entry.decl, self.scopes.len() - 1 - i))
+                return Ok((entry.entity, self.scopes.len() - 1 - i))
             }
         }
 
@@ -254,24 +254,24 @@ impl SemanticAnalyzer {
     }
 
     fn resolve_super(&mut self, super_: &SuperExpression) -> Result<(), SemanticError> {
-        let (decl, scope_distance) = self.resolve_name("super")?;
-        let class = decl.into_class_decl()
+        let (binding, scope_distance) = self.resolve_name("super")?;
+        let class = binding.into_class_decl()
             .expect("Internal compiler error: 'super' resolved to something other than a ClassDeclaration");
-        self.symbol_table.insert_super(super_, class, scope_distance);
+        self.symbol_table.bind_super(super_, class, scope_distance);
         Ok(())
     }
 
     fn resolve_this(&mut self, this: &ThisExpression) -> Result<(), SemanticError> {
-        let (decl, scope_distance) = self.resolve_name("this")?;
-        let class = decl.into_class_decl()
+        let (binding, scope_distance) = self.resolve_name("this")?;
+        let class = binding.into_class_decl()
             .expect("Internal compiler error: 'this' resolved to something other than a ClassDeclaration");
-        self.symbol_table.insert_this(this, class, scope_distance);
+        self.symbol_table.bind_this(this, class, scope_distance);
         Ok(())
     }
 
     fn resolve_variable(&mut self, var: &Variable) -> Result<(), SemanticError> {
-        let (decl, scope_distance) = self.resolve_name(&var.name.lexeme)?;
-        self.symbol_table.insert_variable(var, decl, scope_distance);
+        let (binding, scope_distance) = self.resolve_name(&var.name.lexeme)?;
+        self.symbol_table.bind_variable(var, binding, scope_distance);
         Ok(())
     }
 
@@ -423,7 +423,7 @@ impl SemanticAnalyzer {
                 let (decl, scope_distance) = self.resolve_name(&superclass_name.lexeme)?;
                 let superdecl = decl.into_class_decl()
                     .ok_or(SemanticError::class("Superclass must be a class."))?;
-                self.symbol_table.insert_superclass(class, superdecl, scope_distance);
+                self.symbol_table.bind_superclass(class, superdecl, scope_distance);
                 Some(superdecl)
             }
             None => None
@@ -594,18 +594,18 @@ impl SemanticAnalyzer {
 
     // XXX these functions are used by the Interpreter, and haven't been ported to use SemanticError yet
     pub fn superclass_scope_distance(&self, subclass: &ClassDeclaration) -> Result<usize,String> {
-        self.symbol_table.get_superclass(subclass).map(|(_,result)| result)
+        self.symbol_table.lookup_superclass(subclass).map(|(_,result)| result)
     }
 
     pub fn super_scope_distance(&self, super_: &SuperExpression) -> Result<usize,String> {
-        self.symbol_table.get_super(super_).map(|(_,result)| result)
+        self.symbol_table.lookup_super(super_).map(|(_,result)| result)
     }
 
     pub fn this_scope_distance(&self, var: &ThisExpression) -> Result<usize,String> {
-        self.symbol_table.get_this(var).map(|(_,result)| result)
+        self.symbol_table.lookup_this(var).map(|(_,result)| result)
     }
 
     pub fn variable_scope_distance(&self, var: &Variable) -> Result<usize,String> {
-        self.symbol_table.get_variable(var).map(|(_,result)| result)
+        self.symbol_table.lookup_variable(var).map(|(_,result)| result)
     }
 }

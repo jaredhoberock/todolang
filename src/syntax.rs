@@ -158,7 +158,8 @@ pub struct VariableDeclaration {
     pub initializer: Option<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, EnumRef)]
+#[ref_name(DeclRef)]
 pub enum Declaration {
     Class(ClassDeclaration),
     Function(FunctionDeclaration),
