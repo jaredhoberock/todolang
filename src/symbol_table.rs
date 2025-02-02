@@ -7,7 +7,7 @@ use std::ptr::NonNull;
 pub enum NamedEntity {
     BuiltinFunction,
     Declaration(DeclRef),
-    Parameter,
+    Parameter(NonNull<ParameterDeclaration>),
 }
 
 impl NamedEntity {

@@ -1,5 +1,7 @@
+use crate::resolver::Resolver;
 use crate::syntax::*;
 use std::collections::HashMap;
+use std::rc::Rc;
 use super::environment::TypeEnvironment;
 use super::error::TypeError;
 use super::types::{Kind, Type};
@@ -7,14 +9,16 @@ use super::types::{Kind, Type};
 pub struct TypeChecker {
     env: TypeEnvironment,
     error_cache: HashMap<ExprRef, TypeError>,
+    resolver: Rc<Resolver>,
 }
 
 // type checker either returns the cached type of an expression or computes it
 impl TypeChecker {
-    pub fn new() -> Self {
+    pub fn new(resolver: Rc<Resolver>) -> Self {
         Self { 
             env: TypeEnvironment::new(),
             error_cache: HashMap::new(),
+            resolver,
         }
     }
 
@@ -65,6 +69,25 @@ impl TypeChecker {
         }
     }
 
+    pub fn check_expression(&mut self, expr: &Expression) -> Result<Type, TypeError> {
+        self.memoize(From::from(expr), |slf| {
+            match expr {
+                Expression::Assignment(a) => slf.check_assignment_expression(a),
+                Expression::Literal(l)    => slf.check_literal_expression(l),
+                _ => Ok(slf.env.get_unknown()),
+            }
+        })
+    }
+
+    fn check_assignment_expression(&mut self, expr: &AssignmentExpression) -> Result<Type, TypeError> {
+        self.memoize(From::from(expr), |slf| {
+            let var_ty = slf.resolver.lookup_variable_type(&expr.var);
+            let rhs_ty = slf.check_expression(&*expr.expr)?;
+            slf.unify(var_ty, rhs_ty)?;
+            Ok(var_ty)
+        })
+    }
+
     fn check_literal_expression(&mut self, lit: &LiteralExpression) -> Result<Type, TypeError> {
         self.memoize(From::from(lit), |slf| {
             let ty = match lit.0 {
@@ -77,18 +100,13 @@ impl TypeChecker {
         })
     }
 
-    pub fn check_expression(&mut self, expr: &Expression) -> Result<Type, TypeError> {
-        self.memoize(From::from(expr), |slf| {
-            match expr {
-                Expression::Literal(lit) => slf.check_literal_expression(lit),
-                _ => Ok(slf.env.get_unknown()),
-            }
-        })
-    }
-
     pub fn check_type_expression(&mut self, expr: &TypeExpression) -> Result<Type, TypeError> {
         self.env.lookup_type(&expr.identifier.lexeme)
             .ok_or_else(|| TypeError::UnknownType(expr.identifier.lexeme.clone()))
+    }
+
+    pub fn check_parameter_declaration(&mut self, _: &ParameterDeclaration) -> Result<Type, TypeError> {
+        Ok(self.env.get_unknown())
     }
 
     pub fn check_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<Type, TypeError> {

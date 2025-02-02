@@ -1,7 +1,10 @@
+use crate::declaration_environment::DeclarationEnvironment;
+use crate::resolver::Resolver;
 use crate::symbol_table::{NamedEntity, SymbolTable};
 use crate::syntax::*;
 use crate::types::{TypeChecker,TypeError};
 use std::collections::HashMap;
+use std::rc::Rc;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -126,7 +129,7 @@ impl LexicalScope {
     }
 
     fn declare_and_define_parameter(&mut self, decl: &ParameterDeclaration) -> Result<(),SemanticError> {
-        self.insert(&decl.name.lexeme, true, NamedEntity::Parameter)
+        self.insert(&decl.name.lexeme, true, NamedEntity::Parameter(decl.into()))
     }
 
     fn declare_and_define_super(&mut self, decl: &ClassDeclaration) -> Result<(),SemanticError> {
@@ -145,17 +148,22 @@ impl LexicalScope {
 
 pub struct SemanticAnalyzer {
     scopes: Vec<LexicalScope>,
-    symbol_table: SymbolTable,
+    symbol_table: Rc<SymbolTable>,
+    decl_env: Rc<DeclarationEnvironment>,
     type_checker: TypeChecker,
 }
 
 
 impl SemanticAnalyzer {
     pub fn new(builtin_functions: Vec<String>) -> Self {
+        let symbol_table = Rc::new(SymbolTable::new());
+        let decl_env = Rc::new(DeclarationEnvironment::new());
+        let resolver = Rc::new(Resolver::new(symbol_table.clone(), decl_env.clone()));
         Self {
             scopes: vec![LexicalScope::new_global(builtin_functions)],
-            symbol_table: SymbolTable::new(),
-            type_checker: TypeChecker::new(),
+            symbol_table: symbol_table.clone(),
+            decl_env: decl_env.clone(),
+            type_checker: TypeChecker::new(resolver),
         }
     }
 
@@ -471,7 +479,14 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_parameter_declaration(&mut self, decl: &ParameterDeclaration) -> Result<(), SemanticError> {
-        self.current_scope_mut().declare_and_define_parameter(decl)
+        self.current_scope_mut().declare_and_define_parameter(decl)?;
+
+        let ty = self.type_checker.check_parameter_declaration(&decl)
+            .map_err(SemanticError::from)?;
+
+        self.decl_env.insert_parameter_decl(decl.into(), Some(ty));
+
+        Ok(())
     }
 
     fn analyze_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<(), SemanticError> {
@@ -486,9 +501,12 @@ impl SemanticAnalyzer {
         }
         self.current_scope_mut().define(&decl.name.lexeme);
 
-        self.type_checker.check_variable_declaration(decl)
-            .map(drop)
-            .map_err(Into::into)
+        let ty = self.type_checker.check_variable_declaration(decl)
+            .map_err(SemanticError::from)?;
+
+        self.decl_env.insert_decl(decl.into(), Some(ty));
+
+        Ok(())
     }
 
     fn analyze_assert_statement(&mut self, stmt: &AssertStatement) -> Result<(), SemanticError> {

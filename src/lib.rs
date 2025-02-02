@@ -1,6 +1,8 @@
+pub mod declaration_environment;
 pub mod interpreter;
 pub mod lexer;
 pub mod parser;
+pub mod resolver;
 pub mod semantic_analyzer;
 pub mod source_location;
 pub mod symbol_table;
