@@ -38,7 +38,7 @@ fn evaluate_global_statement(interp: &mut Interpreter, prog: &mut Program, sourc
     }?;
 
     interp.interpret_global_statement(stmt)
-        .map_err(|e| format_diagnostic_for_interpreter_error(&e, "<stding>", &source))
+        .map_err(|e| format_diagnostic_for_interpreter_error(&e, "<stdin>", &source))
 }
 
 fn interpret_from_prompt() -> Result<(),String> {
