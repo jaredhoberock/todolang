@@ -90,11 +90,11 @@ impl TypeChecker {
 
     fn check_literal_expression(&mut self, lit: &LiteralExpression) -> Result<Type, Error> {
         self.memoize(From::from(lit), |slf| {
-            let ty = match lit.0 {
-                Literal::Number(_) => slf.env.get_number(),
-                Literal::String(_) => slf.env.get_string(),
-                Literal::Bool(_)   => slf.env.get_bool(),
-                _                  => slf.env.get_unknown(),
+            let ty = match lit.0.value {
+                LiteralValue::Number(_) => slf.env.get_number(),
+                LiteralValue::String(_) => slf.env.get_string(),
+                LiteralValue::Bool(_)   => slf.env.get_bool(),
+                _                       => slf.env.get_unknown(),
             };
             Ok(ty)
         })

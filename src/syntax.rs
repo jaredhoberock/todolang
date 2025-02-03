@@ -1,12 +1,19 @@
+use crate::source_location::SourceSpan;
 use crate::token::Token;
 use enum_macros::EnumRef;
 
 #[derive(Debug)]
-pub enum Literal {
+pub enum LiteralValue {
     Number(f64),
     String(String),
     Bool(bool),
-    Nil,
+    Nil
+}
+
+#[derive(Debug)]
+pub struct Literal {
+    pub value: LiteralValue,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug)]

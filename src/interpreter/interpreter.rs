@@ -109,11 +109,11 @@ impl Interpreter {
     }
 
     fn interpret_literal_expression(&self, lit: &LiteralExpression) -> Result<Value, Error> {
-        Ok(match &lit.0 {
-            Literal::Bool(b) => Value::Bool(*b),
-            Literal::Nil => Value::Nil,
-            Literal::Number(n) => Value::Number(*n),
-            Literal::String(s) => Value::String(s.clone()),
+        Ok(match &lit.0.value {
+            LiteralValue::Bool(b)   => Value::Bool(*b),
+            LiteralValue::Nil       => Value::Nil,
+            LiteralValue::Number(n) => Value::Number(*n),
+            LiteralValue::String(s) => Value::String(s.clone()),
         })
     }
 
@@ -137,11 +137,11 @@ impl Interpreter {
     fn matches_pattern(&mut self, pattern: &Pattern, scrutinee: &Value) -> bool {
         match pattern {
             Pattern::Literal(lit) => {
-                match &lit.0 {
-                    Literal::Bool(b) => matches!(scrutinee, Value::Bool(v) if v == b),
-                    Literal::Nil => matches!(scrutinee, Value::Nil),
-                    Literal::Number(n) => matches!(scrutinee, Value::Number(v) if v == n),
-                    Literal::String(s) => matches!(scrutinee, Value::String(v) if v == s),
+                match &lit.0.value {
+                    LiteralValue::Bool(b)   => matches!(scrutinee, Value::Bool(v) if v == b),
+                    LiteralValue::Nil       => matches!(scrutinee, Value::Nil),
+                    LiteralValue::Number(n) => matches!(scrutinee, Value::Number(v) if v == n),
+                    LiteralValue::String(s) => matches!(scrutinee, Value::String(v) if v == s),
                 }
             }
             Pattern::Underscore => true

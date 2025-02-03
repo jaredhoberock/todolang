@@ -159,24 +159,52 @@ impl<'a> Parser<'a> {
 
     fn number_literal(&mut self) -> Result<Literal, ParseError> {
         self.token(TokenKind::Number)
-            .map(|token| Literal::Number(token.literal.unwrap().as_number()))
+            .map(|token| {
+                Literal {
+                    value: LiteralValue::Number(token.literal.unwrap().as_number()),
+                    span: token.span
+                }
+            })
     }
 
     fn string_literal(&mut self) -> Result<Literal, ParseError> {
         self.token(TokenKind::String)
-            .map(|token| Literal::String(token.literal.unwrap().as_string()))
+            .map(|token| {
+                Literal {
+                    value: LiteralValue::String(token.literal.unwrap().as_string()),
+                    span: token.span
+                }
+            })
     }
 
     fn true_literal(&mut self) -> Result<Literal, ParseError> {
-        self.token(TokenKind::True).map(|_| Literal::Bool(true))
+        self.token(TokenKind::True)
+            .map(|token| {
+                Literal {
+                    value: LiteralValue::Bool(true),
+                    span: token.span
+                }
+            })
     }
 
     fn false_literal(&mut self) -> Result<Literal, ParseError> {
-        self.token(TokenKind::False).map(|_| Literal::Bool(false))
+        self.token(TokenKind::False)
+            .map(|token| {
+                Literal {
+                    value: LiteralValue::Bool(false),
+                    span: token.span
+                }
+            })
     }
 
     fn nil_literal(&mut self) -> Result<Literal, ParseError> {
-        self.token(TokenKind::Nil).map(|_| Literal::Nil)
+        self.token(TokenKind::Nil)
+            .map(|token| {
+                Literal {
+                    value: LiteralValue::Nil,
+                    span: token.span
+                }
+            })
     }
 
     // grouping_expression := '(' expression ')'
