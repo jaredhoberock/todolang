@@ -159,11 +159,12 @@ pub struct TypeAscription {
     pub expr: TypeExpression,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct ClassDeclaration {
     pub name: Token,
     pub superclass: Option<Token>,
     pub methods: Vec<FunctionDeclaration>,
+    pub rbrace: Token,
 }
 
 #[derive(Debug, Locatable)]
@@ -176,6 +177,12 @@ pub struct FunctionDeclaration {
     pub name: Token,
     pub parameters: Vec<ParameterDeclaration>,
     pub body: BlockStatement,
+}
+
+impl Locatable for FunctionDeclaration {
+    fn source_span(&self) -> SourceSpan {
+        SourceSpan::new(self.name.span.start.clone(), self.body.source_span().end)
+    }
 }
 
 #[derive(Debug)]
@@ -198,7 +205,7 @@ impl Locatable for VariableDeclaration {
     }
 }
 
-#[derive(Debug, EnumRef)]
+#[derive(Debug, EnumRef, Locatable)]
 #[ref_name(DeclRef)]
 pub enum Declaration {
     Class(ClassDeclaration),
@@ -211,9 +218,11 @@ pub struct AssertStatement {
     pub expr: Expression,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct BlockStatement {
+    pub lbrace: Token,
     pub statements: Vec<Statement>,
+    pub rbrace: Token,
 }
 
 #[derive(Debug)]

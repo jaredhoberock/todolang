@@ -719,18 +719,19 @@ impl<'a> Parser<'a> {
 
         let mut methods = Vec::new();
 
-        loop {
-            if self.token(TokenKind::RightBrace).is_ok() {
-                break;
+        let rbrace = loop {
+            if let Ok(rbrace) = self.token(TokenKind::RightBrace) {
+                break rbrace;
             }
 
             methods.push(self.function_declaration()?);
-        }
+        };
 
         Ok(Declaration::Class(ClassDeclaration {
             name,
             superclass,
             methods,
+            rbrace,
         }))
     }
 
@@ -801,22 +802,22 @@ impl<'a> Parser<'a> {
     // block_statement := "{" ( statement )* "}"
     #[restore_state_on_err]
     fn block_statement(&mut self) -> Result<BlockStatement, ParseError> {
-        let _lbrace = self
+        let lbrace = self
             .token(TokenKind::LeftBrace)
             .map_err(ParseError::format_message("{} before block"))?;
 
         let mut statements = Vec::new();
 
-        loop {
-            if self.token(TokenKind::RightBrace).is_ok() {
-                break;
+        let rbrace = loop {
+            if let Ok(rbrace) = self.token(TokenKind::RightBrace) {
+                break rbrace;
             }
 
             let stmt = self.statement()?;
             statements.push(stmt);
-        }
+        };
 
-        Ok(BlockStatement { statements })
+        Ok(BlockStatement { lbrace, statements, rbrace })
     }
 
     // expression_statement := expression ";"

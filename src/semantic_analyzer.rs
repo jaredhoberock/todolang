@@ -317,7 +317,6 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_assignment_expression(&mut self, expr: &AssignmentExpression) -> Result<(), Error> {
-        // XXX TODO type check 
         self.analyze_expression(&expr.expr)?;
         self.analyze_variable(&expr.var)
     }
@@ -328,7 +327,6 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_call_expression(&mut self, call: &CallExpression) -> Result<(), Error> {
-        // XXX TODO check that callee is a function
         self.analyze_expression(&call.callee)?;
         for arg in &call.arguments {
             self.analyze_expression(arg)?;
@@ -376,7 +374,6 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_set_expression(&mut self, set: &SetExpression) -> Result<(), Error> {
-        // XXX TODO type check
         self.analyze_expression(&set.value)?;
         self.analyze_expression(&*set.object)
     }
@@ -422,7 +419,15 @@ impl SemanticAnalyzer {
             Declaration::Class(c) => self.analyze_class_declaration(c),
             Declaration::Function(f) => self.analyze_function_declaration(f, FunctionKind::Normal),
             Declaration::Variable(v) => self.analyze_variable_declaration(v),
-        }
+        }?;
+
+        let ty = self.type_checker
+            .check_declaration(decl)
+            .map_err(|e| Error::type_(e, decl.source_span()))?;
+
+        self.decl_env.insert_decl(decl.into(), Some(ty));
+
+        Ok(())
     }
 
     fn analyze_class_declaration(&mut self, class: &ClassDeclaration) -> Result<(), Error> {
@@ -507,12 +512,6 @@ impl SemanticAnalyzer {
             self.analyze_expression(init)?;
         }
         self.current_scope_mut().define(&decl.name.lexeme);
-
-        let ty = self.type_checker
-            .check_variable_declaration(decl)
-            .map_err(|e| Error::type_(e, decl.source_span()))?;
-
-        self.decl_env.insert_decl(decl.into(), Some(ty));
 
         Ok(())
     }

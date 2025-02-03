@@ -8,6 +8,7 @@ pub enum Kind {
     Number,
     String,
     Bool,
+    Function(Vec<Type>, Type),
     InferenceVariable(usize),
 }
 
@@ -31,10 +32,18 @@ impl Deref for Type {
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match **self {
-            Kind::Number => write!(f, "Number"),
-            Kind::String => write!(f, "String"),
-            Kind::Bool   => write!(f, "Bool"),
+        match &**self {
+            Kind::Number        => write!(f, "Number"),
+            Kind::String        => write!(f, "String"),
+            Kind::Bool          => write!(f, "Bool"),
+            Kind::Function(params,result) => {
+                write!(f, "fn(")?;
+                for (i, param) in params.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", param)?;
+                }
+                write!(f, ") -> {}", result)
+            },
             Kind::InferenceVariable(id) => write!(f, "T{}", id),
         }
     }
@@ -57,6 +66,10 @@ impl TypeArena {
 
     pub fn bool(&self) -> Type {
         Type(Intern::new(Kind::Bool))
+    }
+
+    pub fn function(&self, parameters: Vec<Type>, result: Type) -> Type {
+        Type(Intern::new(Kind::Function(parameters, result)))
     }
 
     pub fn number(&self) -> Type {

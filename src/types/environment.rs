@@ -30,6 +30,10 @@ impl TypeEnvironment {
         self.arena.bool()
     }
 
+    pub fn get_function(&self, parameters: Vec<Type>, result: Type) -> Type {
+        self.arena.function(parameters, result)
+    }
+
     pub fn get_number(&self) -> Type {
         self.arena.number()
     }

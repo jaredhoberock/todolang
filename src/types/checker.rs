@@ -109,7 +109,7 @@ impl TypeChecker {
         Ok(self.env.get_unknown())
     }
 
-    pub fn check_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<Type, Error> {
+    fn check_variable_declaration(&mut self, decl: &VariableDeclaration) -> Result<Type, Error> {
         let declared = if let Some(ascription) = &decl.ascription {
             self.check_type_expression(&ascription.expr)?
         } else {
@@ -125,5 +125,27 @@ impl TypeChecker {
         self.unify(declared, inferred)?;
 
         Ok(declared)
+    }
+
+    fn check_function_declaration(&mut self, decl: &FunctionDeclaration) -> Result<Type, Error> {
+        let mut param_types = Vec::new();
+        for param in &decl.parameters {
+            param_types.push(self.check_parameter_declaration(&param)?)
+        }
+
+        // XXX TODO optional ascription for return type
+        let result_type = self.env.get_unknown();
+
+        // XXX TODO unify result_type and body
+
+        Ok(self.env.get_function(param_types, result_type))
+    }
+
+    pub fn check_declaration(&mut self, decl: &Declaration) -> Result<Type, Error> {
+        match &decl {
+            Declaration::Function(f) => self.check_function_declaration(f),
+            Declaration::Variable(v) => self.check_variable_declaration(v),
+            _ => Ok(self.env.get_unknown()),
+        }
     }
 }
