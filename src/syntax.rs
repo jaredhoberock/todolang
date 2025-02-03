@@ -148,12 +148,12 @@ pub enum Expression {
     Variable(Variable),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct TypeExpression {
     pub identifier: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct TypeAscription {
     pub colon: Token,
     pub expr: TypeExpression,
@@ -166,7 +166,7 @@ pub struct ClassDeclaration {
     pub methods: Vec<FunctionDeclaration>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct ParameterDeclaration {
     pub name: Token,
 }
@@ -183,6 +183,19 @@ pub struct VariableDeclaration {
     pub name: Token,
     pub ascription: Option<TypeAscription>,
     pub initializer: Option<Expression>,
+}
+
+impl Locatable for VariableDeclaration {
+    fn source_span(&self) -> SourceSpan {
+        let mut result = self.name.source_span();
+        if let Some(a) = &self.ascription {
+            result.end = a.source_span().end
+        }
+        if let Some(i) = &self.initializer {
+            result.end = i.source_span().end
+        }
+        result
+    }
 }
 
 #[derive(Debug, EnumRef)]

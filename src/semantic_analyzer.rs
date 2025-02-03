@@ -1,5 +1,6 @@
 use crate::declaration_environment::DeclarationEnvironment;
 use crate::resolver::Resolver;
+use crate::source_location::{Locatable, SourceSpan};
 use crate::symbol_table::{NamedEntity, SymbolTable};
 use crate::syntax::*;
 use crate::types::TypeChecker;
@@ -19,8 +20,8 @@ pub enum Error {
     #[error("Name resolution error: {0}")]
     Name(String),
 
-    #[error(transparent)]
-    Type(#[from] TypeError),
+    #[error("{0}")]
+    Type(TypeError, SourceSpan),
 }
 
 impl Error {
@@ -34,6 +35,10 @@ impl Error {
 
     fn name(msg: impl Into<String>) -> Self {
         Error::Name(msg.into())
+    }
+
+    fn type_(e: TypeError, span: SourceSpan) -> Self {
+        Error::Type(e, span)
     }
 }
 
@@ -308,7 +313,7 @@ impl SemanticAnalyzer {
         // check the type of the expression
         self.type_checker.check_expression(expr)
             .map(drop)
-            .map_err(Into::into)
+            .map_err(|e| Error::type_(e, expr.source_span()))
     }
 
     fn analyze_assignment_expression(&mut self, expr: &AssignmentExpression) -> Result<(), Error> {
@@ -405,7 +410,7 @@ impl SemanticAnalyzer {
         self.type_checker
             .check_type_expression(expr)
             .map(drop)
-            .map_err(Into::into)
+            .map_err(|e| Error::type_(e, expr.source_span()))
     }
 
     fn analyze_type_ascription(&mut self, ascription: &TypeAscription) -> Result<(), Error> {
@@ -482,8 +487,9 @@ impl SemanticAnalyzer {
     fn analyze_parameter_declaration(&mut self, decl: &ParameterDeclaration) -> Result<(), Error> {
         self.current_scope_mut().declare_and_define_parameter(decl)?;
 
-        let ty = self.type_checker.check_parameter_declaration(&decl)
-            .map_err(Error::from)?;
+        let ty = self.type_checker
+            .check_parameter_declaration(&decl)
+            .map_err(|e| Error::type_(e, decl.source_span()))?;
 
         self.decl_env.insert_parameter_decl(decl.into(), Some(ty));
 
@@ -502,8 +508,9 @@ impl SemanticAnalyzer {
         }
         self.current_scope_mut().define(&decl.name.lexeme);
 
-        let ty = self.type_checker.check_variable_declaration(decl)
-            .map_err(Error::from)?;
+        let ty = self.type_checker
+            .check_variable_declaration(decl)
+            .map_err(|e| Error::type_(e, decl.source_span()))?;
 
         self.decl_env.insert_decl(decl.into(), Some(ty));
 
