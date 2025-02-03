@@ -1,4 +1,4 @@
-use crate::source_location::SourceLocation;
+use crate::source_location::{SourceLocation, SourceSpan};
 use crate::token::{Token, TokenKind};
 
 #[cfg(test)]
@@ -63,7 +63,7 @@ impl<'a> Lexer<'a> {
             return Token::new(
                 TokenKind::Error,
                 String::from("Unterminated string"),
-                start_loc,
+                SourceSpan::new(start_loc, self.loc.clone())
             );
         }
 
@@ -71,11 +71,11 @@ impl<'a> Lexer<'a> {
         lexeme.push(self.advance_char());
 
         // For now, literal is same as lexeme (no escape sequences)
-        Token::with_string_literal(
+        Token::new_string_literal(
             TokenKind::String,
             lexeme.clone(),
             lexeme[1..lexeme.len() - 1].to_string(),
-            start_loc,
+            SourceSpan::new(start_loc, self.loc.clone())
         )
     }
 
@@ -97,7 +97,12 @@ impl<'a> Lexer<'a> {
         }
 
         let literal: f64 = lexeme.parse().unwrap();
-        Token::with_number_literal(TokenKind::Number, lexeme, literal, start_loc)
+        Token::new_number_literal(
+            TokenKind::Number, 
+            lexeme, 
+            literal, 
+            SourceSpan::new(start_loc, self.loc.clone())
+        )
     }
 
     fn is_identifier_char(c: char) -> bool {
@@ -114,7 +119,11 @@ impl<'a> Lexer<'a> {
         let kind = TokenKind::from_keyword_lexeme(&lexeme)
             .unwrap_or(TokenKind::Identifier);
 
-        Token::new(kind, lexeme, start_loc)
+        Token::new(
+            kind, 
+            lexeme, 
+            SourceSpan::new(start_loc, self.loc.clone())
+        )
     }
 }
 
@@ -133,48 +142,48 @@ impl<'a> Iterator for Lexer<'a> {
 
             let token = match c {
                 // single-character lexemes
-                ':' => Token::new(TokenKind::Colon, String::from(":"), c_loc),
-                '_' => Token::new(TokenKind::Underscore, String::from("_"), c_loc),
-                '(' => Token::new(TokenKind::LeftParen, String::from("("), c_loc),
-                ')' => Token::new(TokenKind::RightParen, String::from(")"), c_loc),
-                '{' => Token::new(TokenKind::LeftBrace, String::from("{"), c_loc),
-                '}' => Token::new(TokenKind::RightBrace, String::from("}"), c_loc),
-                ',' => Token::new(TokenKind::Comma, String::from(","), c_loc),
-                '.' => Token::new(TokenKind::Dot, String::from("."), c_loc),
-                '-' => Token::new(TokenKind::Minus, String::from("-"), c_loc),
-                '+' => Token::new(TokenKind::Plus, String::from("+"), c_loc),
-                ';' => Token::new(TokenKind::Semicolon, String::from(";"), c_loc),
-                '*' => Token::new(TokenKind::Star, String::from("*"), c_loc),
+                ':' => Token::new(TokenKind::Colon,      String::from(":"), SourceSpan::new(c_loc, self.loc.clone())),
+                '_' => Token::new(TokenKind::Underscore, String::from("_"), SourceSpan::new(c_loc, self.loc.clone())),
+                '(' => Token::new(TokenKind::LeftParen,  String::from("("), SourceSpan::new(c_loc, self.loc.clone())),
+                ')' => Token::new(TokenKind::RightParen, String::from(")"), SourceSpan::new(c_loc, self.loc.clone())),
+                '{' => Token::new(TokenKind::LeftBrace,  String::from("{"), SourceSpan::new(c_loc, self.loc.clone())),
+                '}' => Token::new(TokenKind::RightBrace, String::from("}"), SourceSpan::new(c_loc, self.loc.clone())),
+                ',' => Token::new(TokenKind::Comma,      String::from(","), SourceSpan::new(c_loc, self.loc.clone())),
+                '.' => Token::new(TokenKind::Dot,        String::from("."), SourceSpan::new(c_loc, self.loc.clone())),
+                '-' => Token::new(TokenKind::Minus,      String::from("-"), SourceSpan::new(c_loc, self.loc.clone())),
+                '+' => Token::new(TokenKind::Plus,       String::from("+"), SourceSpan::new(c_loc, self.loc.clone())),
+                ';' => Token::new(TokenKind::Semicolon,  String::from(";"), SourceSpan::new(c_loc, self.loc.clone())),
+                '*' => Token::new(TokenKind::Star,       String::from("*"), SourceSpan::new(c_loc, self.loc.clone())),
 
                 // two-character lexemes
                 '!' => {
                     if self.match_char('=') {
-                        Token::new(TokenKind::BangEqual, String::from("!="), c_loc)
+                        Token::new(TokenKind::BangEqual, String::from("!="), SourceSpan::new(c_loc, self.loc.clone()))
                     } else {
-                        Token::new(TokenKind::Bang, String::from("!"), c_loc)
+                        Token::new(TokenKind::Bang, String::from("!"), SourceSpan::new(c_loc, self.loc.clone()))
                     }
                 }
                 '=' => {
                     if self.match_char('=') {
-                        Token::new(TokenKind::EqualEqual, String::from("=="), c_loc)
+                        Token::new(TokenKind::EqualEqual, String::from("=="), SourceSpan::new(c_loc, self.loc.clone()))
                     } else if self.match_char('>') {
-                        Token::new(TokenKind::EqualGreater, String::from("=>"), c_loc)
+                        Token::new(TokenKind::EqualGreater, String::from("=>"), SourceSpan::new(c_loc, self.loc.clone()))
                     } else {
-                        Token::new(TokenKind::Equal, String::from("="), c_loc)
+                        Token::new(TokenKind::Equal, String::from("="), SourceSpan::new(c_loc, self.loc.clone()))
                     }
                 }
                 '<' => {
                     if self.match_char('=') {
-                        Token::new(TokenKind::LessEqual, String::from("<="), c_loc)
+                        Token::new(TokenKind::LessEqual, String::from("<="), SourceSpan::new(c_loc, self.loc.clone()))
                     } else {
-                        Token::new(TokenKind::Less, String::from("<"), c_loc)
+                        Token::new(TokenKind::Less, String::from("<"), SourceSpan::new(c_loc, self.loc.clone()))
                     }
                 }
                 '>' => {
                     if self.match_char('=') {
-                        Token::new(TokenKind::GreaterEqual, String::from(">="), c_loc)
+                        Token::new(TokenKind::GreaterEqual, String::from(">="), SourceSpan::new(c_loc, self.loc.clone()))
                     } else {
-                        Token::new(TokenKind::Greater, String::from(">"), c_loc)
+                        Token::new(TokenKind::Greater, String::from(">"), SourceSpan::new(c_loc, self.loc.clone()))
                     }
                 }
 
@@ -193,7 +202,7 @@ impl<'a> Iterator for Lexer<'a> {
                         }
                         continue;
                     } else {
-                        Token::new(TokenKind::Slash, String::from("/"), c_loc)
+                        Token::new(TokenKind::Slash, String::from("/"), SourceSpan::new(c_loc, self.loc.clone()))
                     }
                 }
 
@@ -213,7 +222,7 @@ impl<'a> Iterator for Lexer<'a> {
                         Token::new(
                             TokenKind::Error,
                             String::from("Unexpected character"),
-                            c_loc,
+                            SourceSpan::new(c_loc, self.loc.clone()),
                         )
                     }
                 }
@@ -223,7 +232,11 @@ impl<'a> Iterator for Lexer<'a> {
         }
 
         self.emitted_eof = true;
-        Some(Token::new(TokenKind::Eof, String::new(), self.loc.clone()))
+        Some(Token::new(
+            TokenKind::Eof, 
+            String::new(), 
+            SourceSpan::new(self.loc.clone(), self.loc.clone())
+        ))
     }
 }
 

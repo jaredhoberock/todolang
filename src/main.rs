@@ -3,7 +3,7 @@ use std::io::Write;
 use todolang::interpreter::Interpreter;
 use todolang::lexer::Lexer;
 use todolang::parser::{parse_global_statement_or_eof, parse_program, ParseError};
-use todolang::source_location::SourceRange;
+use todolang::source_location::SourceSpan;
 use todolang::syntax::Program;
 use todolang::token::{Token, TokenKind};
 
@@ -15,7 +15,7 @@ fn format_syntax_error(error: &ParseError, source: &str) -> String {
     let mut output = format!("Syntax error: {}\n", error);
     
     if let Some(token) = &error.error_token {
-        let range = SourceRange::line_of(source, &token.location);
+        let range = SourceSpan::line_of(source, token.location());
         let source_line = range.as_str(source);
         
         // Add the line number and source line
@@ -25,7 +25,7 @@ fn format_syntax_error(error: &ParseError, source: &str) -> String {
         let column = if token.kind == TokenKind::Eof {
             source_line.len()
         } else {
-            token.location.column
+            token.location().column
         };
         
         // Add the pointer line

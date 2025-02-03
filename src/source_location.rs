@@ -32,7 +32,7 @@ impl std::fmt::Display for SourceLocation {
     }
 }
 
-/// Represents a range within a source string, using an inclusive `start` location
+/// Represents a span within a source string, using an inclusive `start` location
 /// and an exclusive `end` location.
 ///
 /// The `start` field marks the beginning of the range and is an inclusive, physical
@@ -45,13 +45,18 @@ impl std::fmt::Display for SourceLocation {
 ///
 /// This design aligns with Rust's exclusive slice semantics, making it easy to obtain
 /// a substring using `source[start.offset..end.offset]`.
-pub struct SourceRange {
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceSpan {
     pub start: SourceLocation,
     pub end: SourceLocation,
 }
 
-impl SourceRange {
-    pub fn line_of(source: &str, loc: &SourceLocation) -> SourceRange {
+impl SourceSpan {
+    pub fn new(start: SourceLocation, end: SourceLocation) -> Self {
+        Self { start, end }
+    }
+
+    pub fn line_of(source: &str, loc: &SourceLocation) -> SourceSpan {
         // Cap offset within source bounds to avoid out-of-bounds access
         let offset = std::cmp::min(loc.offset, source.len());
 
@@ -75,7 +80,7 @@ impl SourceRange {
             .map(|i| start_offset + i) // Position end exclusive of newline character
             .unwrap_or(source.len()); // If no newline, go to the end of the source
 
-        SourceRange {
+        SourceSpan {
             start: SourceLocation {
                 line: effective_line,
                 column: 1,
@@ -99,7 +104,7 @@ impl SourceRange {
     }
 }
 
-impl std::fmt::Display for SourceRange {
+impl std::fmt::Display for SourceSpan {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "Start: {}, End: {}", self.start, self.end)
     }
