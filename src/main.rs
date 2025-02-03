@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use todolang::diagnostics::format_diagnostic;
+use todolang::diagnostics::*;
 use todolang::interpreter::Interpreter;
 use todolang::lexer::Lexer;
 use todolang::parser::{parse_global_statement_or_eof, parse_program};
@@ -13,9 +13,9 @@ fn usage() {
 
 fn interpret(filename: &str, source: &str) -> Result<(),String> {
     let tokens: Vec<Token> = Lexer::new(&source).collect();
-    let prog = parse_program(&tokens).map_err(|e| format_diagnostic(&e, &filename, &source))?;
+    let prog = parse_program(&tokens).map_err(|e| format_diagnostic_for_parse_error(&e, &filename, &source))?;
     let mut interp = Interpreter::new();
-    interp.interpret_program(&prog).map_err(|e| format!("{}", e))
+    interp.interpret_program(&prog).map_err(|e| format_diagnostic_for_interpreter_error(&e, &filename, &source))
 }
 
 fn interpret_from_file(filename: &str) -> Result<(),String> {
@@ -34,11 +34,11 @@ fn evaluate_global_statement(interp: &mut Interpreter, prog: &mut Program, sourc
             prog.statements.push(Box::new(stmt));
             Ok(prog.statements.last().unwrap())
         },
-        Err(error) => Err(format_diagnostic(&error, "<stdin>", source)),
+        Err(error) => Err(format_diagnostic_for_parse_error(&error, "<stdin>", source)),
     }?;
 
     interp.interpret_global_statement(stmt)
-        .map_err(|e| format!("{}", e))
+        .map_err(|e| format_diagnostic_for_interpreter_error(&e, "<stding>", &source))
 }
 
 fn interpret_from_prompt() -> Result<(),String> {

@@ -4,9 +4,11 @@ use codespan_reporting::term::termcolor::Buffer;
 use codespan_reporting::term::{emit, Config};
 
 use crate::parser::ParseError;
+use crate::interpreter::Error as InterpreterError;
+use crate::semantic_analyzer::Error as SemanticError;
 use crate::token::TokenKind;
 
-pub fn format_diagnostic(error: &ParseError, filename: &str, source: &str) -> String {
+pub fn format_diagnostic_for_parse_error(error: &ParseError, filename: &str, source: &str) -> String {
     let file = SimpleFile::new(filename, source);
 
     let mut diagnostic = Diagnostic::error().with_message(error.to_string());
@@ -31,6 +33,33 @@ pub fn format_diagnostic(error: &ParseError, filename: &str, source: &str) -> St
                 .with_message(label_message)
         );
     }
+
+    let mut writer = Buffer::ansi();
+    emit(&mut writer, &Config::default(), &file, &diagnostic)
+        .expect("failed to write diagnostic");
+
+    String::from_utf8(writer.into_inner())
+        .expect("diagnostic output was not valid UTF-8")
+}
+
+fn add_labels_for_semantic_error(error: &SemanticError, diagnostic: &mut Diagnostic<()>) {
+    match error {
+        SemanticError::Type(_, span) => {
+            diagnostic.labels.push(Label::primary((), span.as_range()))
+        },
+        _ => (),
+    };
+}
+
+pub fn format_diagnostic_for_interpreter_error(error: &InterpreterError, filename: &str, source: &str) -> String {
+    let file = SimpleFile::new(filename, source);
+
+    let mut diagnostic = Diagnostic::error().with_message(error.to_string());
+
+    match &error {
+        InterpreterError::Semantic(e) => add_labels_for_semantic_error(e, &mut diagnostic),
+        _ => (),
+    };
 
     let mut writer = Buffer::ansi();
     emit(&mut writer, &Config::default(), &file, &diagnostic)

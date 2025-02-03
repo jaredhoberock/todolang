@@ -1,1 +1,3 @@
-A class can't inherit from itself.
+[0m[1m[38;5;9merror[0m[1m: A class can't inherit from itself.[0m
+
+
