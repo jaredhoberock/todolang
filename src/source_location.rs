@@ -56,44 +56,6 @@ impl SourceSpan {
         Self { start, end }
     }
 
-    pub fn line_of(source: &str, loc: &SourceLocation) -> SourceSpan {
-        // Cap offset within source bounds to avoid out-of-bounds access
-        let offset = std::cmp::min(loc.offset, source.len());
-
-        // Handle EOF on a trailing newline by moving back to the last content line
-        let (effective_offset, effective_line) = if offset == source.len() && source.ends_with('\n')
-        {
-            (offset.saturating_sub(1), loc.line.saturating_sub(1))
-        } else {
-            (offset, loc.line)
-        };
-
-        // find the start of the line by searching backwards to the nearest newline
-        let start_offset = source[..effective_offset]
-            .rfind('\n')
-            .map(|i| i + 1) // Move past the newline character
-            .unwrap_or(0);
-
-        // find the end of the line by locating the next newline or the end of the source
-        let end_offset = source[start_offset..]
-            .find('\n')
-            .map(|i| start_offset + i) // Position end exclusive of newline character
-            .unwrap_or(source.len()); // If no newline, go to the end of the source
-
-        SourceSpan {
-            start: SourceLocation {
-                line: effective_line,
-                column: 1,
-                offset: start_offset,
-            },
-            end: SourceLocation {
-                line: effective_line,
-                column: (end_offset - start_offset), // Exclusive length
-                offset: end_offset,
-            },
-        }
-    }
-
     pub fn line(&self) -> usize {
         self.start.line
     }
@@ -101,6 +63,10 @@ impl SourceSpan {
     /// Returns a `&str` for this range, with an exclusive end.
     pub fn as_str<'a>(&self, source: &'a str) -> &'a str {
         &source[self.start.offset..self.end.offset]
+    }
+
+    pub fn as_range(&self) -> std::ops::Range<usize> {
+        self.start.offset..self.end.offset
     }
 }
 

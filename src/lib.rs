@@ -1,4 +1,5 @@
 pub mod declaration_environment;
+pub mod diagnostics;
 pub mod interpreter;
 pub mod lexer;
 pub mod parser;

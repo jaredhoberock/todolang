@@ -1,43 +1,19 @@
 use std::io::Write;
 
+use todolang::diagnostics::format_diagnostic;
 use todolang::interpreter::Interpreter;
 use todolang::lexer::Lexer;
-use todolang::parser::{parse_global_statement_or_eof, parse_program, ParseError};
-use todolang::source_location::SourceSpan;
+use todolang::parser::{parse_global_statement_or_eof, parse_program};
 use todolang::syntax::Program;
-use todolang::token::{Token, TokenKind};
+use todolang::token::Token;
 
 fn usage() {
     println!("usage: todolang [script]");
 }
 
-fn format_syntax_error(error: &ParseError, source: &str) -> String {
-    let mut output = format!("Syntax error: {}\n", error);
-    
-    if let Some(token) = &error.error_token {
-        let range = SourceSpan::line_of(source, token.location());
-        let source_line = range.as_str(source);
-        
-        // Add the line number and source line
-        output.push_str(&format!("{:>4} | {}\n", range.line(), source_line));
-        
-        // Calculate the column position for the pointer
-        let column = if token.kind == TokenKind::Eof {
-            source_line.len()
-        } else {
-            token.location().column
-        };
-        
-        // Add the pointer line
-        output.push_str(&format!("     | {}^", " ".repeat(column)));
-    }
-    
-    output
-}
-
-fn interpret(source: String) -> Result<(),String> {
+fn interpret(filename: &str, source: &str) -> Result<(),String> {
     let tokens: Vec<Token> = Lexer::new(&source).collect();
-    let prog = parse_program(&tokens).map_err(|e| format_syntax_error(&e, &source))?;
+    let prog = parse_program(&tokens).map_err(|e| format_diagnostic(&e, &filename, &source))?;
     let mut interp = Interpreter::new();
     interp.interpret_program(&prog).map_err(|e| format!("{}", e))
 }
@@ -45,7 +21,7 @@ fn interpret(source: String) -> Result<(),String> {
 fn interpret_from_file(filename: &str) -> Result<(),String> {
     let source = std::fs::read_to_string(filename)
         .map_err(|e| format!("Error reading file: {}", e))?;
-    interpret(source)
+    interpret(filename, &source)
 }
 
 fn evaluate_global_statement(interp: &mut Interpreter, prog: &mut Program, source: &str) -> Result<(),String> {
@@ -58,7 +34,7 @@ fn evaluate_global_statement(interp: &mut Interpreter, prog: &mut Program, sourc
             prog.statements.push(Box::new(stmt));
             Ok(prog.statements.last().unwrap())
         },
-        Err(error) => Err(format_syntax_error(&error, source)),
+        Err(error) => Err(format_diagnostic(&error, "<stdin>", source)),
     }?;
 
     interp.interpret_global_statement(stmt)
