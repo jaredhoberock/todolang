@@ -1,6 +1,13 @@
-use crate::source_location::SourceSpan;
+use crate::source_location::{Locatable, SourceSpan};
 use crate::token::Token;
 use enum_macros::EnumRef;
+use locatable_derive::Locatable;
+
+impl Locatable for Token {
+    fn source_span(&self) -> SourceSpan {
+        self.span.clone()
+    }
+}
 
 #[derive(Debug)]
 pub enum LiteralValue {
@@ -16,48 +23,54 @@ pub struct Literal {
     pub span: SourceSpan,
 }
 
-#[derive(Debug)]
+impl Locatable for Literal {
+    fn source_span(&self) -> SourceSpan {
+        self.span.clone()
+    }
+}
+
+#[derive(Debug, Locatable)]
 pub struct LiteralExpression(pub Literal);
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct Variable {
     pub name: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct AssignmentExpression {
     pub var: Variable,
     pub expr: Box<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct BinaryExpression {
     pub left_expr: Box<Expression>,
     pub op: Token,
     pub right_expr: Box<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct CallExpression {
     pub callee: Box<Expression>,
     pub arguments: Vec<Expression>,
     pub closing_paren: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct GetExpression {
     pub object: Box<Expression>,
     pub name: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct GroupingExpression {
     pub lparen: Token,
     pub expr: Box<Expression>,
     pub rparen: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct LogicalExpression {
     pub left_expr: Box<Expression>,
     pub op: Token,
@@ -86,31 +99,38 @@ pub struct MatchExpression {
     pub arms: Vec<MatchArm>,
 }
 
-#[derive(Debug)]
+impl Locatable for MatchExpression {
+    fn source_span(&self) -> SourceSpan {
+        // XXX just return the span of 'match' for now
+        self.keyword.source_span()
+    }
+}
+
+#[derive(Debug, Locatable)]
 pub struct SuperExpression {
     pub keyword: Token,
     pub method: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct SetExpression {
     pub object: Box<Expression>,
     pub name: Token,
     pub value: Box<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct ThisExpression {
     pub keyword: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Locatable)]
 pub struct UnaryExpression {
     pub op: Token,
     pub expr: Box<Expression>,
 }
 
-#[derive(Debug, EnumRef)]
+#[derive(Debug, EnumRef, Locatable)]
 #[ref_name(ExprRef)]
 pub enum Expression {
     Assignment(AssignmentExpression),

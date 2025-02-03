@@ -109,3 +109,13 @@ impl std::fmt::Display for SourceSpan {
         write!(f, "Start: {}, End: {}", self.start, self.end)
     }
 }
+
+pub trait Locatable {
+    fn source_span(&self) -> SourceSpan;
+}
+
+impl<T: Locatable> Locatable for Box<T> {
+    fn source_span(&self) -> SourceSpan {
+        (**self).source_span()
+    }
+}

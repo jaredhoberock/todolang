@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+enum_macros = { path = "./enum_macros" }
 internment = "0.7.0"
+locatable_derive = { path = "./locatable_derive" }
 restore_macros = { path = "./restore_macros" }
 thiserror = "1"
-enum_macros = { path = "./enum_macros" }
 
 [dev-dependencies]
 pretty_assertions = "1.3"
