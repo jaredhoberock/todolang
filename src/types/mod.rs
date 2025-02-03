@@ -4,5 +4,5 @@ mod error;
 mod types;
 
 pub use checker::*;
-pub use error::TypeError;
+pub use error::Error;
 pub use types::Type;
