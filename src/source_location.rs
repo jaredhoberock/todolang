@@ -14,15 +14,14 @@ impl SourceLocation {
         }
     }
 
-    pub fn advance_line(&mut self, source_char: char) {
-        self.line += 1;
-        self.column = 1;
+    pub fn advance(&mut self, source_char: char) {
         self.offset += source_char.len_utf8();
-    }
-
-    pub fn advance_column(&mut self, source_char: char) {
-        self.column += 1;
-        self.offset += source_char.len_utf8();
+        if source_char == '\n' {
+            self.line += 1;
+            self.column = 1;
+        } else {
+            self.column += 1;
+        }
     }
 }
 

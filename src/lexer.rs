@@ -34,7 +34,7 @@ impl<'a> Lexer<'a> {
     fn advance_char(&mut self) -> char {
         let c = self.peek();
         self.source = &self.source[self.peek().len_utf8()..];
-        self.loc.advance_column(c);
+        self.loc.advance(c);
         c
     }
 
@@ -52,10 +52,6 @@ impl<'a> Lexer<'a> {
         let mut lexeme = String::from("\"");
 
         while !self.is_at_end() && self.peek() != '"' {
-            let c = self.peek();
-            if c == '\n' {
-                self.loc.advance_line(c);
-            }
             lexeme.push(self.advance_char());
         }
 
@@ -188,10 +184,7 @@ impl<'a> Iterator for Lexer<'a> {
                 }
 
                 // newline
-                '\n' => {
-                    self.loc.advance_line(c);
-                    continue;
-                }
+                '\n' => continue,
 
                 // slash
                 '/' => {
@@ -365,5 +358,71 @@ mod tests {
 
         assert_eq!(tokens.len(), 2); // just print + EOF
         assert_eq!(tokens[0].kind, TokenKind::Print);
+    }
+
+    #[test]
+    fn test_token_source_span() {
+        // Example source. The string literal should have a span that covers exactly "\"Hello\"".
+        let source = "var x = \"Hello\";";
+        let tokens: Vec<Token> = Lexer::new(source).collect();
+    
+        // Find the token for the string literal.
+        let string_token = tokens
+            .iter()
+            .find(|token| token.kind == TokenKind::String)
+            .expect("Expected a string token");
+    
+        // Use the token's span to extract the substring from the source.
+        let span_str = string_token.span.as_str(source);
+    
+        // Check that the substring matches the expected lexeme.
+        assert_eq!(span_str, "\"Hello\"", "The token's span did not match the expected substring");
+    
+        // Verify that the start and end offsets are correct.
+        // In this source, the string literal starts at byte offset 8:
+        // "var x = " (8 bytes) then the string literal.
+        // And it should end at offset 15 ("\"Hello\"" is 7 bytes long).
+        assert_eq!(string_token.span.start.offset, 8, "Unexpected start offset");
+        assert_eq!(string_token.span.end.offset, 15, "Unexpected end offset");
+    }
+
+    #[test]
+    fn test_source_span_with_newline() {
+        // The source string contains a newline between "foo" and "bar".
+        // "foo" is on the first line and "bar" is on the second.
+        let source = "foo\nbar";
+        let tokens: Vec<Token> = Lexer::new(source).collect();
+    
+        // We expect three tokens:
+        // 1. An identifier for "foo"
+        // 2. An identifier for "bar"
+        // 3. An EOF token
+        assert_eq!(tokens.len(), 3);
+    
+        // Check the first token ("foo")
+        let token_foo = &tokens[0];
+        assert_eq!(token_foo.kind, TokenKind::Identifier);
+        assert_eq!(token_foo.lexeme, "foo");
+    
+        // "foo" occupies the first 3 bytes (offsets 0..3)
+        assert_eq!(token_foo.span.start.offset, 0, "Expected 'foo' to start at offset 0");
+        assert_eq!(token_foo.span.end.offset, 3, "Expected 'foo' to end at offset 3");
+        assert_eq!(token_foo.span.as_str(source), "foo");
+    
+        // Check the second token ("bar")
+        let token_bar = &tokens[1];
+        assert_eq!(token_bar.kind, TokenKind::Identifier);
+        assert_eq!(token_bar.lexeme, "bar");
+    
+        // Since we have a newline after "foo", which is 1 byte (LF),
+        // "bar" should start at offset 4. ("foo" covers offsets 0..3, newline is offset 3, then "bar" is 4..7.)
+        assert_eq!(token_bar.span.start.offset, 4, "Expected 'bar' to start at offset 4");
+        assert_eq!(token_bar.span.end.offset, 7, "Expected 'bar' to end at offset 7");
+        assert_eq!(token_bar.span.as_str(source), "bar");
+    
+        // Optionally, you can also check the line and column numbers.
+        // For instance, "foo" should be on line 1, "bar" on line 2.
+        assert_eq!(token_foo.span.start.line, 1, "Expected 'foo' to be on line 1");
+        assert_eq!(token_bar.span.start.line, 2, "Expected 'bar' to be on line 2");
     }
 }
