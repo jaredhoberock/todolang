@@ -415,6 +415,9 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_declaration(&mut self, decl: &Declaration) -> Result<(), Error> {
+        // first create a declararation in the environment with unknown type
+        self.decl_env.new_decl(decl.into());
+
         match decl {
             Declaration::Class(c) => self.analyze_class_declaration(c),
             Declaration::Function(f) => self.analyze_function_declaration(f, FunctionKind::Normal),
@@ -425,7 +428,8 @@ impl SemanticAnalyzer {
             .check_declaration(decl)
             .map_err(|e| Error::type_(e, decl.source_span()))?;
 
-        self.decl_env.insert_decl(decl.into(), Some(ty));
+        // update the declaration's type
+        self.decl_env.update_decl(decl.into(), ty);
 
         Ok(())
     }
@@ -492,11 +496,13 @@ impl SemanticAnalyzer {
     fn analyze_parameter_declaration(&mut self, decl: &ParameterDeclaration) -> Result<(), Error> {
         self.current_scope_mut().declare_and_define_parameter(decl)?;
 
+        self.decl_env.new_parameter_decl(decl.into());
+
         let ty = self.type_checker
             .check_parameter_declaration(&decl)
             .map_err(|e| Error::type_(e, decl.source_span()))?;
 
-        self.decl_env.insert_parameter_decl(decl.into(), Some(ty));
+        self.decl_env.update_parameter_decl(decl.into(), ty);
 
         Ok(())
     }

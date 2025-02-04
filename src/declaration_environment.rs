@@ -21,16 +21,31 @@ impl DeclarationEnvironment {
         }
     }
 
-    fn insert(&self, key: Key, ty: Option<Type>) {
-        self.env.borrow_mut().insert(key, ty);
+    fn new_entry(&self, key: Key) {
+        self.env.borrow_mut().insert(key, None);
     }
 
-    pub fn insert_decl(&self, decl: DeclRef, ty: Option<Type>) {
-        self.insert(Key::Decl(decl), ty)
+    fn update_entry(&self, key: Key, ty: Type) {
+        let mut env = self.env.borrow_mut();
+        env.get_mut(&key)
+            .expect(&format!("Attempted to update non-existent key"))
+            .replace(ty);
     }
 
-    pub fn insert_parameter_decl(&self, decl: NonNull<ParameterDeclaration>, ty: Option<Type>) {
-        self.insert(Key::ParmDecl(decl), ty)
+    pub fn new_decl(&self, decl: DeclRef) {
+        self.new_entry(Key::Decl(decl))
+    }
+
+    pub fn update_decl(&self, decl: DeclRef, ty: Type) {
+        self.update_entry(Key::Decl(decl), ty)
+    }
+
+    pub fn new_parameter_decl(&self, decl: NonNull<ParameterDeclaration>) {
+        self.new_entry(Key::ParmDecl(decl))
+    }
+
+    pub fn update_parameter_decl(&self, decl: NonNull<ParameterDeclaration>, ty: Type) {
+        self.update_entry(Key::ParmDecl(decl), ty)
     }
 
     pub fn lookup_decl(&self, decl: DeclRef) -> Option<Option<Type>> {
@@ -41,15 +56,13 @@ impl DeclarationEnvironment {
         self.env.borrow().get(&Key::ParmDecl(decl)).cloned()
     }
 
-    pub fn lookup_type_for_decl(&self, decl: DeclRef) -> Type {
+    pub fn lookup_type_for_decl(&self, decl: DeclRef) -> Option<Type> {
         self.lookup_decl(decl)
             .expect("Internal compiler error: declaration not found in environment.")
-            .expect("Internal compiler error: Type not computed for declaration.")
     }
 
-    pub fn lookup_type_for_parameter_decl(&self, decl: NonNull<ParameterDeclaration>) -> Type {
+    pub fn lookup_type_for_parameter_decl(&self, decl: NonNull<ParameterDeclaration>) -> Option<Type> {
         self.lookup_parameter_decl(decl)
             .expect("Internal compiler error: parameter declaration not found in environment.")
-            .expect("Internal compiler error: Type not computed for declaration.")
     }
 }

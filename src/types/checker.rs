@@ -22,20 +22,29 @@ impl TypeChecker {
         }
     }
 
-    // For our simple language:
-    // * If either type is an inference variable, we treat them as compatible
-    // * Otherwise, the types must be equal
-    fn unify(&mut self, t1: Type, t2: Type) -> Result<(), Error> {
-        match (&*t1, &*t2) {
+    fn unify(&mut self, expected: Type, found: Type) -> Result<(), Error> {
+        match (&*expected, &*found) {
             // If either is an inference variable, succeed
             (Kind::InferenceVariable(_), _) | (_, Kind::InferenceVariable(_)) => Ok(()),
+
+            // If both types are function types, unify their components
+            (Kind::Function(params1, ret1), Kind::Function(params2, ret2)) => {
+                if params1.len() != params2.len() {
+                    return Err(Error::Mismatch { expected, found });
+                }
+                // unify each parameter type
+                for (p1, p2) in params1.iter().zip(params2.iter()) {
+                    self.unify(p1.clone(), p2.clone())?;
+                }
+                // unify return types
+                self.unify(ret1.clone(), ret2.clone())
+            },
+
             // If both are concrete, they must be equal
-            _ if t1 == t2 => Ok(()),
+            _ if expected == found => Ok(()),
+
             // Otherwise, fail
-            _ => Err(Error::Mismatch{ 
-                expected: t1, 
-                found: t2
-            }),
+            _ => Err(Error::Mismatch{ expected, found }),
         }
     }
 
@@ -73,7 +82,9 @@ impl TypeChecker {
         self.memoize(From::from(expr), |slf| {
             match expr {
                 Expression::Assignment(a) => slf.check_assignment_expression(a),
+                Expression::Call(c)       => slf.check_call_expression(c),
                 Expression::Literal(l)    => slf.check_literal_expression(l),
+                Expression::Variable(v)   => slf.check_variable(v),
                 _ => Ok(slf.env.get_unknown()),
             }
         })
@@ -81,10 +92,25 @@ impl TypeChecker {
 
     fn check_assignment_expression(&mut self, expr: &AssignmentExpression) -> Result<Type, Error> {
         self.memoize(From::from(expr), |slf| {
-            let var_ty = slf.resolver.lookup_variable_type(&expr.var);
+            let var_ty = slf.check_variable(&expr.var)?;
             let rhs_ty = slf.check_expression(&*expr.expr)?;
             slf.unify(var_ty, rhs_ty)?;
             Ok(var_ty)
+        })
+    }
+
+    fn check_call_expression(&mut self, expr: &CallExpression) -> Result<Type, Error> {
+        self.memoize(From::from(expr), |slf| {
+            let callee_type = slf.check_expression(&*expr.callee)?;
+            let mut argument_types = Vec::new();
+            for arg in &expr.arguments {
+                argument_types.push(slf.check_expression(arg)?);
+            }
+            let result_type = slf.env.get_unknown();
+            let expected_function_type = slf.env.get_function(argument_types, result_type);
+
+            slf.unify(expected_function_type, callee_type)?;
+            Ok(result_type)
         })
     }
 
@@ -100,8 +126,18 @@ impl TypeChecker {
         })
     }
 
+    fn check_variable(&mut self, var: &Variable) -> Result<Type, Error> {
+        self.memoize(From::from(var), |slf| {
+            let result = slf.resolver
+                .lookup_variable_type(&var)
+                .unwrap_or(slf.env.get_unknown());
+            Ok(result)
+        })
+    }
+
     pub fn check_type_expression(&mut self, expr: &TypeExpression) -> Result<Type, Error> {
-        self.env.lookup_type(&expr.identifier.lexeme)
+        self.env
+            .lookup_type(&expr.identifier.lexeme)
             .ok_or_else(|| Error::UnknownType(expr.identifier.lexeme.clone()))
     }
 

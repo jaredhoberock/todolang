@@ -14,14 +14,14 @@ impl Resolver {
         Self { symbol_table, decl_env }
     }
 
-    pub fn lookup_variable_type(&self, var: &Variable) -> Type {
+    pub fn lookup_variable_type(&self, var: &Variable) -> Option<Type> {
         let entry = self.symbol_table
             .lookup_variable(var)
             .expect(&format!("Internal compiler error: variable '{}' not found in symbol table.", var.name.lexeme));
         match entry.0 {
-            NamedEntity::Declaration(d) => self.decl_env.lookup_type_for_decl(d),
-            NamedEntity::Parameter(p) => self.decl_env.lookup_type_for_parameter_decl(p),
-            _ => panic!("Internal compiler error: variable '{}' does not refer to a Declaration.", var.name.lexeme),
+            NamedEntity::BuiltinFunction => None,
+            NamedEntity::Declaration(d)  => self.decl_env.lookup_type_for_decl(d),
+            NamedEntity::Parameter(p)    => self.decl_env.lookup_type_for_parameter_decl(p),
         }
     }
 }
