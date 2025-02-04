@@ -1,0 +1,2 @@
+var x: String = "Hello";
+x(1,2);
