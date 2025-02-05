@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, PartialEq)]
+use std::cmp::Ordering;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SourceLocation {
     pub line: usize,
     pub column: usize,
@@ -22,6 +24,18 @@ impl SourceLocation {
         } else {
             self.column += 1;
         }
+    }
+}
+
+impl PartialOrd for SourceLocation {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.offset.partial_cmp(&other.offset)
+    }
+}
+
+impl Ord for SourceLocation {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.offset.cmp(&other.offset)
     }
 }
 
@@ -66,6 +80,12 @@ impl SourceSpan {
 
     pub fn as_range(&self) -> std::ops::Range<usize> {
         self.start.offset..self.end.offset
+    }
+
+    pub fn merge(&self, other: &SourceSpan) -> SourceSpan {
+        let start = std::cmp::min(&self.start, &other.start).clone();
+        let end = std::cmp::max(&self.end, &other.end).clone();
+        SourceSpan::new(start, end)
     }
 }
 
