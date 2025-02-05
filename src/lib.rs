@@ -2,6 +2,7 @@ pub mod declaration_environment;
 pub mod diagnostics;
 pub mod interpreter;
 pub mod lexer;
+mod name_resolver;
 pub mod parser;
 pub mod resolver;
 pub mod semantic_analyzer;

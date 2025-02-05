@@ -44,8 +44,8 @@ pub fn format_diagnostic_for_parse_error(error: &ParseError, filename: &str, sou
 
 fn add_labels_for_semantic_error(error: &SemanticError, diagnostic: &mut Diagnostic<()>) {
     match error {
-        SemanticError::Type(_, span) => {
-            diagnostic.labels.push(Label::primary((), span.as_range()))
+        SemanticError::Type(e) => {
+            diagnostic.labels.push(Label::primary((), e.span.as_range()))
         },
         _ => (),
     };
