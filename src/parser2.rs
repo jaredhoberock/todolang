@@ -1,0 +1,472 @@
+use crate::ast::untyped::*;
+use crate::token::*;
+
+extern crate restore_macros;
+use restore_macros::restore_state_on_err;
+
+#[derive(Debug)]
+pub struct ParseError {
+    message: String,
+    remaining_len: usize,
+    pub error_token: Option<Token>,
+}
+
+impl ParseError {
+    pub fn new(message: String, remaining: &[Token]) -> Self {
+        ParseError {
+            message,
+            remaining_len: remaining.len(),
+            error_token: if remaining.is_empty() {
+                None
+            } else {
+                Some(remaining[0].clone())
+            },
+        }
+    }
+
+    // This returns a closure that takes a ParseError and returns a ParseError whose
+    // message has been formatted with the given fmt string
+    pub fn format_message(fmt: &'static str) -> impl FnOnce(ParseError) -> ParseError {
+        |e| ParseError {
+            // format the message of e using the fmt string
+            message: fmt.replace("{}", &e.message),
+            // preserve the other details of the original ParseError
+            remaining_len: e.remaining_len,
+            error_token: e.error_token,
+        }
+    }
+
+    // Take the error with the least remaining input (most progress)
+    pub fn combine(errors: Vec<ParseError>) -> ParseError {
+        errors.into_iter().min_by_key(|e| e.remaining_len).unwrap()
+    }
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+#[derive(Clone)]
+struct Parser<'a> {
+    remaining: &'a [Token],
+}
+
+impl<'a> Parser<'a> {
+    fn new(remaining: &'a [Token]) -> Parser<'a> {
+        Parser { remaining }
+    }
+
+    // almost all of the methods below use the restore_state_on_err macro
+    // to reset the state of the Parser (i.e., the remaining unparsed input)
+    // back to its original state upon entering the method when
+    // these methods fail a parse
+    //
+    // this allows us to try to parse one alternative, automatically backtrack,
+    // try the next alternative, etc.
+    //
+    // this macro hooks into save_state & restore_state
+    fn save_state(&self) -> &'a [Token] {
+        return self.remaining
+    }
+
+    fn restore_state(&mut self, old_remaining: &'a [Token]) {
+        self.remaining = old_remaining
+    }
+
+    #[restore_state_on_err]
+    fn token(&mut self, kind: TokenKind) -> Result<Token, ParseError> {
+        if self.remaining.is_empty() || self.remaining[0].kind != kind {
+            return Err(ParseError::new(
+                format!("Expected '{}'", kind),
+                self.remaining,
+            ));
+        }
+
+        let result = self.remaining[0].clone();
+        self.remaining = &self.remaining[1..];
+        Ok(result)
+    }
+
+    #[restore_state_on_err]
+    fn comma(&mut self) -> Result<Token, ParseError> {
+        self.token(TokenKind::Comma)
+    }
+
+    #[restore_state_on_err]
+    fn either_token(&mut self, kind0: TokenKind, kind1: TokenKind) -> Result<Token, ParseError> {
+        let tok0 = self.token(kind0);
+        if tok0.is_ok() {
+            return tok0;
+        }
+
+        let tok1 = self.token(kind1);
+        if tok1.is_ok() {
+            return tok1;
+        }
+
+        let errors = vec![tok0.unwrap_err(), tok1.unwrap_err()];
+
+        Err(ParseError::combine(errors))
+    }
+
+    fn identifier(&mut self) -> Result<Token, ParseError> {
+        self.token(TokenKind::Identifier)
+    }
+
+    fn number_literal(&mut self) -> Result<Literal, ParseError> {
+        self.token(TokenKind::Number)
+            .map(|token| {
+                Literal {
+                    value: LiteralValue::Number(token.literal.unwrap().as_number()),
+                    span: token.span
+                }
+            })
+    }
+
+    fn string_literal(&mut self) -> Result<Literal, ParseError> {
+        self.token(TokenKind::String)
+            .map(|token| {
+                Literal {
+                    value: LiteralValue::String(token.literal.unwrap().as_string()),
+                    span: token.span
+                }
+            })
+    }
+
+    // literal := number_literal | string_literal
+    #[restore_state_on_err]
+    fn literal(&mut self) -> Result<Literal, ParseError> {
+        let number = self.number_literal();
+        if number.is_ok() {
+            return number;
+        }
+
+        let string = self.string_literal();
+        if string.is_ok() {
+            return string;
+        }
+
+        let errors = vec![
+            number.unwrap_err(),
+            string.unwrap_err(),
+        ];
+
+        Err(ParseError::combine(errors))
+    }
+
+    // literal_expression := literal
+    fn literal_expression(&mut self) -> Result<Expression, ParseError> {
+         self.literal().map(Expression::Literal)
+    }
+
+    // variable_expression := identifier
+    fn variable_expression(&mut self) -> Result<Expression, ParseError> {
+        self.identifier().map(|name| Expression::Variable { name })
+    }
+
+    // primary_expression := literal_expression | variable
+    #[restore_state_on_err]
+    fn primary_expression(&mut self) -> Result<Expression, ParseError> {
+        let literal = self.literal_expression();
+        if literal.is_ok() {
+            return literal;
+        }
+
+        let var = self.variable_expression();
+        if var.is_ok() {
+            return var;
+        }
+
+        let errors = vec![
+            literal.unwrap_err(),
+            var.unwrap_err(),
+        ];
+
+        Err(ParseError::combine(errors))
+    }
+
+    // arguments := expression ( "," expression )*
+    #[restore_state_on_err]
+    fn arguments(&mut self) -> Result<Vec<Expression>, ParseError> {
+        let mut result = Vec::new();
+
+        loop {
+            if result.len() == 255 {
+                return Err(ParseError::new(
+                    "Can't have more than 255 arguments".to_string(),
+                    self.remaining,
+                ));
+            }
+
+            let err_fmt_str = if result.len() > 0 {
+                "{} after ',' in argument list"
+            } else {
+                "{}"
+            };
+
+            let expr = self
+                .expression()
+                .map_err(ParseError::format_message(err_fmt_str))?;
+
+            result.push(expr);
+
+            // look for a comma to indicate another argument
+            if let Err(_) = self.token(TokenKind::Comma) {
+                break;
+            }
+        }
+
+        Ok(result)
+    }
+
+    // call := primary_expression ( "." identifier | "(" arguments? ")" )*
+    #[restore_state_on_err]
+    fn call_expression(&mut self) -> Result<Expression, ParseError> {
+        let mut result = self.primary_expression()?;
+
+        loop {
+            let tok = match self.either_token(TokenKind::LeftParen, TokenKind::Dot) {
+                Ok(t) => t,
+                Err(_) => break,
+            };
+
+            result = match tok.kind {
+                TokenKind::LeftParen => {
+                    // look for a closing ')'
+                    match self.token(TokenKind::RightParen) {
+                        Ok(closing_paren) => {
+                            Expression::Call { 
+                                callee: Box::new(result), 
+                                arguments: Vec::new(),
+                                closing_paren,
+                            }
+                        }
+                        _ => {
+                            let arguments = self
+                                .arguments()
+                                .map_err(ParseError::format_message("{} after '('"))?;
+                            let closing_paren = self
+                                .token(TokenKind::RightParen)
+                                .map_err(ParseError::format_message("{} after arguments"))?;
+                            Expression::Call {
+                                callee: Box::new(result),
+                                arguments, 
+                                closing_paren,
+                            }
+                        }
+                    }
+                }
+
+                _ => unreachable!("either_token only returns Dot or LeftParen"),
+            };
+        }
+
+        Ok(result)
+    }
+
+    // expression := call_expression
+    fn expression(&mut self) -> Result<Expression, ParseError> {
+        self.call_expression()
+    }
+
+    // type_expression := identifier
+    #[restore_state_on_err]
+    fn type_expression(&mut self) -> Result<TypeExpression, ParseError> {
+        Ok(TypeExpression{ identifier: self.identifier()? })
+    }
+
+    // parameter := identifier type_ascription
+    #[restore_state_on_err]
+    fn parameter(&mut self) -> Result<Parameter, ParseError> {
+        Ok(Parameter { name: self.identifier()?, ascription: self.type_ascription()? })
+    }
+
+    // parameters := parameter ( "," parameter )*
+    #[restore_state_on_err]
+    fn parameters(&mut self) -> Result<Vec<Parameter>, ParseError> {
+        let mut params = vec![self.parameter()?];
+
+        while self.token(TokenKind::Comma).is_ok() {
+            let param = self
+                .parameter()
+                .map_err(ParseError::format_message("{} in function parameter list"))?;
+            params.push(param);
+        }
+
+        Ok(params)
+    }
+
+    // function_declaration := "fun" identifier "(" parameters? ")" block_statement
+    #[restore_state_on_err]
+    fn function_declaration(&mut self) -> Result<Declaration, ParseError> {
+        let _fun = self
+            .token(TokenKind::Fun)
+            .map_err(ParseError::format_message("{} before function name"))?;
+        let name = self.identifier()?;
+        let _lparen = self.token(TokenKind::LeftParen)?;
+
+        let mut parameters = Vec::new();
+        if let Ok(params) = self.parameters() {
+            parameters = params;
+        }
+
+        let _rparen = self.token(TokenKind::RightParen)?;
+        let body = self.block_statement()?;
+
+        Ok(Declaration::Function {
+            name,
+            parameters,
+            body,
+        })
+    }
+
+    // type_ascription := ":" type_expression
+    #[restore_state_on_err]
+    fn type_ascription(&mut self) -> Result<TypeAscription, ParseError> {
+        let colon = self.token(TokenKind::Colon)?;
+        let expr = self.type_expression()?;
+        Ok(TypeAscription{ colon, expr })
+    }
+
+    // variable_declaration := "var" identifier type_ascription "=" expression ";"
+    #[restore_state_on_err]
+    fn variable_declaration(&mut self) -> Result<Declaration, ParseError> {
+        let _var = self.token(TokenKind::Var)?;
+        let name = self.identifier()?;
+        let ascription = self.type_ascription()?;
+        let _equal = self.token(TokenKind::Equal)?;
+        let initializer = self.expression()?;
+        let semi = self.token(TokenKind::Semicolon)?;
+
+        Ok(Declaration::Variable {
+            name,
+            ascription,
+            initializer,
+            semi,
+        })
+    }
+
+    // declaration := function_declaration | variable_declaration
+    #[restore_state_on_err]
+    fn declaration(&mut self) -> Result<Declaration, ParseError> {
+        let fun = self.function_declaration();
+        if fun.is_ok() {
+            return fun;
+        }
+
+        let var = self.variable_declaration();
+        if var.is_ok() {
+            return var;
+        }
+
+        let errors = vec![
+            fun.unwrap_err(), 
+            var.unwrap_err()
+        ];
+
+        Err(ParseError::combine(errors))
+    }
+
+    // block_statement := "{" ( statement )* "}"
+    #[restore_state_on_err]
+    fn block_statement(&mut self) -> Result<BlockStatement, ParseError> {
+        let lbrace = self
+            .token(TokenKind::LeftBrace)
+            .map_err(ParseError::format_message("{} before block"))?;
+
+        let mut statements = Vec::new();
+
+        let rbrace = loop {
+            if let Ok(rbrace) = self.token(TokenKind::RightBrace) {
+                break rbrace;
+            }
+
+            let stmt = self.statement()?;
+            statements.push(stmt);
+        };
+
+        Ok(BlockStatement { lbrace, statements, rbrace })
+    }
+
+    // expression_statement := expression ";"
+    #[restore_state_on_err]
+    fn expression_statement(&mut self) -> Result<Statement, ParseError> {
+        let expr = self.expression()?;
+        let semi = self.token(TokenKind::Semicolon)?;
+        Ok(Statement::Expr{ expr, semi })
+    }
+
+    // print_statement := "print" expression ";"
+    #[restore_state_on_err]
+    fn print_statement(&mut self) -> Result<Statement, ParseError> {
+        let print = self.token(TokenKind::Print)?;
+        let expr = self.expression()?;
+        let semi = self.token(TokenKind::Semicolon)?;
+        Ok(Statement::Print { print, expr, semi } )
+    }
+
+    // statement := block_statement | declaration | expression_statement | print_statement
+    #[restore_state_on_err]
+    fn statement(&mut self) -> Result<Statement, ParseError> {
+        let block = self.block_statement().map(Statement::Block);
+        if block.is_ok() {
+            return block;
+        }
+
+        let decl = self.declaration().map(Statement::Decl);
+        if decl.is_ok() {
+            return decl;
+        }
+
+        let expr = self.expression_statement();
+        if expr.is_ok() {
+            return expr;
+        }
+
+        let print = self.print_statement();
+        if print.is_ok() {
+            return print;
+        }
+
+        let errors = vec![
+            block.unwrap_err(),
+            decl.unwrap_err(),
+            expr.unwrap_err(),
+            print.unwrap_err(),
+        ];
+
+        Err(ParseError::combine(errors))
+    }
+
+    #[restore_state_on_err]
+    fn global_statement_or_eof(&mut self) -> Result<Option<Statement>, ParseError> {
+        if self.token(TokenKind::Eof).is_ok() {
+            return Ok(None);
+        }
+        Ok(Some(self.statement()?))
+    }
+
+    // module := statement* EOF
+    #[restore_state_on_err]
+    fn module(&mut self) -> Result<Module, ParseError> {
+        let mut stmts = Vec::new();
+
+        while let Some(stmt) = self.global_statement_or_eof()? {
+            stmts.push(stmt);
+        }
+
+        Ok(Module { statements: stmts })
+    }
+}
+
+pub fn parse_module(tokens: &[Token]) -> Result<Module, ParseError> {
+    let mut parser = Parser::new(tokens);
+    parser.module()
+}
+
+pub fn parse_global_statement_or_eof(tokens: &[Token]) -> Result<Option<Statement>, ParseError> {
+    let mut parser = Parser::new(tokens);
+    parser.global_statement_or_eof()
+}
