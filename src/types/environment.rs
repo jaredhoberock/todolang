@@ -42,6 +42,10 @@ impl TypeEnvironment {
         self.arena.string()
     }
 
+    pub fn get_unit(&self) -> Type {
+        self.arena.unit()
+    }
+
     pub fn get_unknown(&self) -> Type {
         self.arena.unknown()
     }

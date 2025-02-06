@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use super::environment::TypeEnvironment;
 use super::error::{Error, InternalError};
-use super::types::{Kind, Type};
+use super::types::Type;
+use super::unify;
 
 pub struct TypeChecker {
     env: TypeEnvironment,
@@ -37,32 +38,6 @@ impl TypeChecker {
             Statement::Print(s)  => self.check_print_statement(s).map(drop),
             Statement::Return(s) => self.check_return_statement(s).map(drop),
             Statement::While(s)  => self.check_while_statement(s).map(drop),
-        }
-    }
-
-    fn unify(&mut self, expected: Type, found: Type) -> Result<(), InternalError> {
-        match (&*expected, &*found) {
-            // If either is an inference variable, succeed
-            (Kind::InferenceVariable(_), _) | (_, Kind::InferenceVariable(_)) => Ok(()),
-
-            // If both types are function types, unify their components
-            (Kind::Function(params1, ret1), Kind::Function(params2, ret2)) => {
-                if params1.len() != params2.len() {
-                    return Err(InternalError::Mismatch { expected, found });
-                }
-                // unify each parameter type
-                for (p1, p2) in params1.iter().zip(params2.iter()) {
-                    self.unify(p1.clone(), p2.clone())?;
-                }
-                // unify return types
-                self.unify(ret1.clone(), ret2.clone())
-            },
-
-            // If both are concrete, they must be equal
-            _ if expected == found => Ok(()),
-
-            // Otherwise, fail
-            _ => Err(InternalError::Mismatch{ expected, found }),
         }
     }
 
@@ -186,8 +161,7 @@ impl TypeChecker {
         self.memoize(From::from(expr), |slf| {
             let var_ty = slf.check_variable(&expr.var)?;
             let rhs_ty = slf.check_expression(&*expr.expr)?;
-            slf.unify(var_ty, rhs_ty)
-                .map_err(|e| Error::new(e, expr.source_span()))?;
+            unify(var_ty, rhs_ty).map_err(|e| Error::new(e, expr.source_span()))?;
             Ok(var_ty)
         })
     }
@@ -202,7 +176,7 @@ impl TypeChecker {
             let result_type = slf.env.get_unknown();
             let expected_function_type = slf.env.get_function(argument_types, result_type);
 
-            slf.unify(expected_function_type, callee_type)
+            unify(expected_function_type, callee_type)
                 .map_err(|e| Error::new(e, expr.source_span()))?;
             Ok(result_type)
         })
@@ -257,8 +231,7 @@ impl TypeChecker {
             self.env.get_unknown()
         };
 
-        self.unify(declared, inferred)
-            .map_err(|e| Error::new(e, decl.source_span()))?;
+        unify(declared, inferred).map_err(|e| Error::new(e, decl.source_span()))?;
 
         Ok(declared)
     }

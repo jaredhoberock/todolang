@@ -10,6 +10,7 @@ pub enum Kind {
     Bool,
     Function(Vec<Type>, Type),
     InferenceVariable(usize),
+    Unit,
 }
 
 // Public reference type that hides Intern<Type> from users of this module
@@ -17,8 +18,19 @@ pub enum Kind {
 pub struct Type(Intern<Kind>);
 
 impl Type {
+    pub fn is_function(&self) -> bool {
+        matches!(**self, Kind::Function(_,_))
+    }
+
     pub fn is_number(&self) -> bool {
         matches!(**self, Kind::Number)
+    }
+
+    pub fn function_return_type(&self) -> Type {
+        match **self {
+            Kind::Function(_, result) => result.clone(),
+            _ => panic!("Internal compiler error: not a function type"),
+        }
     }
 }
 
@@ -45,6 +57,7 @@ impl fmt::Display for Type {
                 write!(f, ") -> {}", result)
             },
             Kind::InferenceVariable(id) => write!(f, "T{}", id),
+            Kind::Unit => write!(f, "()"),
         }
     }
 }
@@ -78,6 +91,10 @@ impl TypeArena {
 
     pub fn string(&self) -> Type {
         Type(Intern::new(Kind::String))
+    }
+
+    pub fn unit(&self) -> Type {
+        Type(Intern::new(Kind::Unit))
     }
 
     pub fn unknown(&self) -> Type {
