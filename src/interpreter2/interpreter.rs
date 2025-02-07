@@ -52,8 +52,9 @@ impl Interpreter {
         todo!("interpret_declaration")
     }
 
-    fn interpret_expression_statement(&mut self, _expr: &Expression, _type: &Type, _location: &SourceSpan) -> Result<(), String> {
-        todo!("interpret_expression_statement")
+    fn interpret_expression_statement(&mut self, expr: &Expression, _type: &Type, _location: &SourceSpan) -> Result<(), String> {
+        let expr = self.interpret_expression(&expr)?;
+        Ok(())
     }
 
     fn interpret_print_statement(&mut self, expr: &Expression, _location: &SourceSpan) -> Result<(), String> {
