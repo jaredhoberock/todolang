@@ -16,6 +16,12 @@ pub struct Literal {
 
 #[derive(Debug)]
 pub enum Expression {
+    Block {
+        lbrace: Token,
+        statements: Vec<Statement>,
+        expr: Option<Box<Self>>,
+        rbrace: Token,
+    },
     Call {
         callee: Box<Self>,
         arguments: Vec<Self>,
@@ -30,6 +36,9 @@ pub enum Expression {
 impl Expression {
     pub fn source_span(&self) -> SourceSpan {
         match &self {
+            Self::Block{ lbrace, rbrace, .. } => {
+                lbrace.span.merge(&rbrace.span)
+            },
             Self::Call{ callee, closing_paren, .. } => {
                 callee.source_span()
                     .merge(&closing_paren.span)
@@ -84,7 +93,7 @@ pub enum Declaration {
     Function {
         name: Token,
         parameters: Vec<Parameter>,
-        body: BlockStatement,
+        body: Expression,
     },
     Variable {
         name: Token,
@@ -108,25 +117,11 @@ impl Declaration {
 }
 
 #[derive(Debug)]
-pub struct BlockStatement {
-    pub lbrace: Token,
-    pub statements: Vec<Statement>,
-    pub rbrace: Token,
-}
-
-impl BlockStatement {
-    pub fn source_span(&self) -> SourceSpan {
-        self.lbrace.span.merge(&self.rbrace.span)
-    }
-}
-
-#[derive(Debug)]
 pub enum Statement {
     Assert {
         expr: Expression, 
         semi: Token,
     },
-    Block(BlockStatement),
     Decl(Declaration),
     Expr {
         expr: Expression,
@@ -145,7 +140,6 @@ impl Statement {
             Self::Assert{ expr, semi } => {
                 expr.source_span().merge(&semi.span)
             },
-            Self::Block(b) => b.source_span(),
             Self::Decl(d) => d.source_span(),
             Self::Expr{ expr, semi } => {
                 expr.source_span().merge(&semi.span)

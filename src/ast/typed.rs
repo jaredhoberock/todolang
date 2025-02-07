@@ -19,6 +19,12 @@ pub struct Literal {
 
 #[derive(Debug)]
 pub enum Expression {
+    Block {
+        statements: Vec<Statement>,
+        expr: Option<Box<Self>>,
+        type_: Type,
+        location: SourceSpan,
+    },
     Call {
         callee: Box<Self>,
         arguments: Vec<Self>,
@@ -36,6 +42,7 @@ pub enum Expression {
 impl Expression {
     pub fn type_(&self) -> Type {
         match self {
+            Self::Block { type_, .. } => type_.clone(),
             Self::Call{ type_, .. } => type_.clone(),
             Self::Literal(lit) => lit.type_.clone(),
             Self::Variable{ decl, .. } => decl.type_(),
@@ -48,7 +55,7 @@ pub enum Declaration {
     Function {
         name: Token,
         parameters: Vec<Rc<Self>>,
-        body: BlockStatement,
+        body: Expression,
         type_: Type,
         location: SourceSpan,
     },
@@ -84,20 +91,12 @@ impl Declaration {
 }
 
 #[derive(Debug)]
-pub struct BlockStatement {
-    pub statements: Vec<Statement>,
-    pub type_: Type,
-    pub location: SourceSpan,
-}
-
-#[derive(Debug)]
 pub enum Statement {
     Assert {
         expr: Expression,
         type_: Type,
         location: SourceSpan,
     },
-    Block(BlockStatement),
     Decl(Rc<Declaration>),
     Expr {
         expr: Expression,

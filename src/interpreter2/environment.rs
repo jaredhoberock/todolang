@@ -1,5 +1,4 @@
 use crate::ast::typed::*;
-use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::rc::Weak;
@@ -30,6 +29,10 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn unit() -> Self {
+        Self::Unit
+    }
+
     pub fn as_bool(&self) -> bool {
         match self {
             Value::Bool(b) => *b,

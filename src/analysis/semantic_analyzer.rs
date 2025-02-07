@@ -1,6 +1,5 @@
 use crate::ast::untyped::*;
 use crate::ast::typed::Module as TypedModule;
-use crate::ast::typed::BlockStatement as TypedBlockStatement;
 use crate::ast::typed::Declaration as TypedDeclaration;
 use crate::ast::typed::Expression as TypedExpression;
 use crate::ast::typed::LiteralValue as TypedLiteralValue;
@@ -66,15 +65,56 @@ impl SemanticAnalyzer {
 
     fn analyze_expression(&mut self, expr: &Expression) -> Result<TypedExpression, Error> {
         match expr {
+            Expression::Block{ statements, expr: maybe_expr, .. } => {
+                self.analyze_block_expression(
+                    &statements,
+                    &maybe_expr,
+                    expr.source_span()
+                )
+            },
             Expression::Call{ callee, arguments, .. } => {
                 self.analyze_call_expression(
                     &callee, 
                     &arguments, 
-                    expr.source_span())
+                    expr.source_span()
+                )
             },
             Expression::Literal(lit) => self.analyze_literal_expression(&lit.value, expr.source_span()),
             Expression::Variable{ name } => self.analyze_variable_expression(&name, expr.source_span()),
         }
+    }
+
+    fn analyze_block_expression(
+        &mut self,
+        untyped_statements: &Vec<Statement>,
+        untyped_expr: &Option<Box<Expression>>,
+        location: SourceSpan
+    ) -> Result<TypedExpression, Error> {
+        self.with_new_scope(|slf| {
+            let mut statements = Vec::new();
+            let mut type_ = slf.type_env.get_unit();
+
+            // analyze statements
+            for stmt in untyped_statements {
+                statements.push(slf.analyze_statement(&stmt)?);
+            }
+
+            // analyze a possible final expression
+            let expr = if let Some(e) = &untyped_expr {
+                let typed_expr = slf.analyze_expression(&*e)?;
+                type_ = typed_expr.type_();
+                Some(Box::new(typed_expr))
+            } else {
+                None
+            };
+
+            Ok(TypedExpression::Block {
+                statements,
+                expr,
+                type_,
+                location,
+            })
+        })
     }
 
     fn analyze_call_expression(
@@ -167,23 +207,6 @@ impl SemanticAnalyzer {
         })
     }
 
-    fn analyze_block_statement(&mut self, stmt: &BlockStatement) -> Result<TypedBlockStatement, Error> {
-        self.with_new_scope(|slf| {
-            let mut statements = Vec::new();
-            for stmt in &stmt.statements {
-                statements.push(slf.analyze_statement(&stmt)?);
-            }
-
-            // XXX we need to analyze statements to find the actual type of the block
-
-            Ok(TypedBlockStatement{
-                statements,
-                type_: slf.type_env.get_unit(),
-                location: stmt.source_span(),
-            })
-        })
-    }
-
     fn analyze_declaration(&mut self, decl: &Declaration) -> Result<Rc<TypedDeclaration>, Error> {
         match decl {
             Declaration::Function { name, parameters, body } => {
@@ -224,7 +247,7 @@ impl SemanticAnalyzer {
         &mut self, 
         name: &Token, 
         untyped_parameters: &Vec<Parameter>, 
-        untyped_body: &BlockStatement, 
+        untyped_body: &Expression, 
         location: SourceSpan) -> Result<Rc<TypedDeclaration>, Error>
     {
         // declare the function with an unknown type
@@ -245,11 +268,11 @@ impl SemanticAnalyzer {
             let fun_type = slf.type_env.get_function(param_types, result_type);
 
             // analyze body
-            let body = slf.analyze_block_statement(&untyped_body)?;
+            let body = slf.analyze_expression(&untyped_body)?;
 
             // check return type against body
             // XXX we need to do substitution to get the function's inferred type
-            unify(result_type, body.type_)
+            unify(result_type, body.type_())
                 .map_err(|e| {
                     Error::type_(format!("{}", e), &location)
                 })?;
@@ -319,7 +342,6 @@ impl SemanticAnalyzer {
     fn analyze_statement(&mut self, stmt: &Statement) -> Result<TypedStatement, Error> {
         match stmt {
             Statement::Assert { expr, .. } => self.analyze_assert_statement(&expr, stmt.source_span()),
-            Statement::Block(stmt) => self.analyze_block_statement(&stmt).map(TypedStatement::Block),
             Statement::Decl(decl) => self.analyze_declaration(&decl).map(TypedStatement::Decl),
             Statement::Expr { expr, .. } => self.analyze_expression_statement(&expr, stmt.source_span()),
             Statement::Print { expr, .. } => self.analyze_print_statement(&expr, stmt.source_span()),

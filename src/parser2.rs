@@ -193,6 +193,53 @@ impl<'a> Parser<'a> {
          self.literal().map(Expression::Literal)
     }
 
+    // block_expression := "{" (statement)* expression? "}"
+    #[restore_state_on_err]
+    fn block_expression(&mut self) -> Result<Expression, ParseError> {
+        let lbrace = self
+            .token(TokenKind::LeftBrace)
+            .map_err(ParseError::format_message("{} before block"))?;
+
+        let mut statements = Vec::new();
+        let mut expr = None;
+
+        // loop until we encounter the closing brace
+        let rbrace = loop {
+            if let Ok(rbrace) = self.token(TokenKind::RightBrace) {
+                break rbrace;
+            }
+
+            // try to parse a statement
+            let maybe_stmt = self.statement();
+            if let Ok(stmt) = maybe_stmt {
+                statements.push(stmt);
+                continue;
+            }
+
+            // try to parse an expression
+            let maybe_expr = self.expression();
+            if let Ok(e) = maybe_expr {
+                expr = Some(Box::new(e));
+                break self.token(TokenKind::RightBrace)
+                    .map_err(ParseError::format_message("{} after block"))?;
+            }
+
+            // combine errors and return
+            let errors = vec![
+                maybe_stmt.unwrap_err(),
+                maybe_expr.unwrap_err(),
+            ];
+            return Err(ParseError::combine(errors))
+        };
+
+        Ok(Expression::Block{
+            lbrace, 
+            statements,
+            expr, 
+            rbrace,
+        })
+    }
+
     // variable_expression := identifier
     fn variable_expression(&mut self) -> Result<Expression, ParseError> {
         self.identifier().map(|name| Expression::Variable { name })
@@ -330,7 +377,7 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    // function_declaration := "fun" identifier "(" parameters? ")" block_statement
+    // function_declaration := "fun" identifier "(" parameters? ")" block_expression
     #[restore_state_on_err]
     fn function_declaration(&mut self) -> Result<Declaration, ParseError> {
         let _fun = self
@@ -345,7 +392,7 @@ impl<'a> Parser<'a> {
         }
 
         let _rparen = self.token(TokenKind::RightParen)?;
-        let body = self.block_statement()?;
+        let body = self.block_expression()?;
 
         Ok(Declaration::Function {
             name,
@@ -410,27 +457,6 @@ impl<'a> Parser<'a> {
         Ok(Statement::Assert { expr, semi })
     }
 
-    // block_statement := "{" ( statement )* "}"
-    #[restore_state_on_err]
-    fn block_statement(&mut self) -> Result<BlockStatement, ParseError> {
-        let lbrace = self
-            .token(TokenKind::LeftBrace)
-            .map_err(ParseError::format_message("{} before block"))?;
-
-        let mut statements = Vec::new();
-
-        let rbrace = loop {
-            if let Ok(rbrace) = self.token(TokenKind::RightBrace) {
-                break rbrace;
-            }
-
-            let stmt = self.statement()?;
-            statements.push(stmt);
-        };
-
-        Ok(BlockStatement { lbrace, statements, rbrace })
-    }
-
     // expression_statement := expression ";"
     #[restore_state_on_err]
     fn expression_statement(&mut self) -> Result<Statement, ParseError> {
@@ -448,17 +474,12 @@ impl<'a> Parser<'a> {
         Ok(Statement::Print { print, expr, semi } )
     }
 
-    // statement := assert_statement | block_statement | declaration | expression_statement | print_statement
+    // statement := assert_statement | declaration | expression_statement | print_statement
     #[restore_state_on_err]
     fn statement(&mut self) -> Result<Statement, ParseError> {
         let assert = self.assert_statement();
         if assert.is_ok() {
             return assert;
-        }
-
-        let block = self.block_statement().map(Statement::Block);
-        if block.is_ok() {
-            return block;
         }
 
         let decl = self.declaration().map(Statement::Decl);
@@ -478,7 +499,6 @@ impl<'a> Parser<'a> {
 
         let errors = vec![
             assert.unwrap_err(),
-            block.unwrap_err(),
             decl.unwrap_err(),
             expr.unwrap_err(),
             print.unwrap_err(),

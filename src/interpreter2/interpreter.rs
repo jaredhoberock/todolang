@@ -3,7 +3,6 @@ use crate::source_location::SourceSpan;
 use crate::token::Token;
 use crate::types::Type;
 use super::environment::*;
-use std::ops::ControlFlow;
 use std::rc::Rc;
 
 pub struct Interpreter {
@@ -21,27 +20,22 @@ impl Interpreter {
         Ok(())
     }
 
-    fn interpret_statement(&mut self, stmt: &Statement) -> Result<ControlFlow<Value>, String> {
+    fn interpret_statement(&mut self, stmt: &Statement) -> Result<(), String> {
         match stmt {
             Statement::Assert { expr, location, .. } => {
                 self.interpret_assert_statement(&expr, &location)
-                    .map(|_| ControlFlow::Continue(()))
             },
-            Statement::Block(block) => self.interpret_block_statement(&block),
             Statement::Decl(decl)  => {
                 self.interpret_declaration(decl.clone())
-                    .map(|_| ControlFlow::Continue(()))
             },
             Statement::Expr { expr, type_, location } => {
                 self.interpret_expression_statement(
                     &expr, 
                     &type_, 
                     &location)
-                    .map(|_| ControlFlow::Continue(()))
             },
             Statement::Print { expr, location, .. } => {
                 self.interpret_print_statement(&expr, &location)
-                    .map(|_| ControlFlow::Continue(()))
             }
         }
     }
@@ -52,10 +46,6 @@ impl Interpreter {
             return Err("assert failed".into())
         }
         Ok(())
-    }
-
-    fn interpret_block_statement(&mut self, _block: &BlockStatement) -> Result<ControlFlow<Value>, String> {
-        todo!("interpret_block_statement")
     }
 
     fn interpret_declaration(&mut self, _decl: Rc<Declaration>) -> Result<(), String> {
@@ -74,6 +64,14 @@ impl Interpreter {
 
     fn interpret_expression(&mut self, expr: &Expression) -> Result<Value, String> {
         match expr {
+            Expression::Block{ statements, expr, type_, location } => {
+                self.interpret_block_expression(
+                    &statements,
+                    &expr,
+                    &type_,
+                    &location
+                )
+            },
             Expression::Call{ callee, arguments, type_, location } => {
                 self.interpret_call_expression(
                     &*callee, 
@@ -91,6 +89,16 @@ impl Interpreter {
                 )
             }
         }
+    }
+
+    fn interpret_block_expression(
+        &mut self,
+        _statements: &Vec<Statement>,
+        _expr: &Option<Box<Expression>>,
+        _type_: &Type,
+        _location: &SourceSpan
+    ) -> Result<Value, String> {
+        todo!("interpret_block_expression")
     }
 
     fn interpret_call_expression(
