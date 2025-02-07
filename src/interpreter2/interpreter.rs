@@ -146,11 +146,11 @@ impl Interpreter {
 
     fn interpret_variable_expression(
         &mut self,
-        _name: &Token, 
+        name: &Token, 
         _decl: &Rc<Declaration>, 
-        _scope_distance: usize, 
+        scope_distance: usize, 
         _location: &SourceSpan
     ) -> Result<Value, String> {
-        todo!("interpret_variable_expression")
+        self.env.get_at(scope_distance, &name.lexeme)
     }
 }

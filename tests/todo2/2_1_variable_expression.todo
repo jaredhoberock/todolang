@@ -1,0 +1,2 @@
+var x: String = "OK";
+print x;
