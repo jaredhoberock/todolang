@@ -35,6 +35,7 @@ pub enum Expression {
     Variable {
         name: Token,
         decl: Rc<Declaration>,
+        scope_distance: usize,
         location: SourceSpan,
     },
 }

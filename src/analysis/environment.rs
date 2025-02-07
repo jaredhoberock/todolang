@@ -74,27 +74,31 @@ impl Environment {
         }
     }
 
-    fn lookup(&self, name: &str) -> Result<Entry, Error> {
+    /// Looks up a name in the environment and returns the matching Entry
+    /// along with the number of scopes between the current (innermost) scope
+    /// and the scope where the name is found (0 means the innermost scope)
+    fn lookup_with_distance(&self, name: &str) -> Result<(Entry, usize), Error> {
         if self.scopes.is_empty() {
             panic!("Internal compiler error: cannot resolve name '{}' outside of a scope", name);
         }
 
-        for scope in self.scopes.iter().rev() {
+        for (distance, scope) in self.scopes.iter().rev().enumerate() {
             if let Some(entry) = scope.get(name) {
-                return Ok(entry.clone())
+                return Ok((entry.clone(), distance))
             }
         }
 
         Err(Error::name(format!("cannot find '{}' in this scope", name)))
     }
 
-    pub fn get_definition(&self, name: &str) -> Result<Rc<Declaration>, Error> {
-        match self.lookup(name) {
-            Ok(Entry::Defined(def)) => Ok(def.clone()),
-            Ok(Entry::Declared(_)) => {
+    /// Returns the definition for a name along with the scope distance.
+    /// The returned tuple contains the defined Declaration and the scope distance.
+    pub fn get_definition(&self, name: &str) -> Result<(Rc<Declaration>, usize), Error> {
+        match self.lookup_with_distance(name)? {
+            (Entry::Defined(def), distance) => Ok((def.clone(), distance)),
+            (Entry::Declared(_), _) => {
                 panic!("Internal compiler error: declaration '{}' has no definition", name);
             },
-            Err(e) => Err(e),
         }
     }
 }

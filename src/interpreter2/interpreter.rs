@@ -3,14 +3,16 @@ use crate::source_location::SourceSpan;
 use crate::token::Token;
 use crate::types::Type;
 use super::environment::*;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct Interpreter {
+    env: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self {}
+        Self { env: Environment::new_shared_global() }
     }
 
     pub fn interpret_module(&mut self, module: &Module) -> Result<(),String> {
@@ -48,8 +50,30 @@ impl Interpreter {
         Ok(())
     }
 
-    fn interpret_declaration(&mut self, _decl: Rc<Declaration>) -> Result<(), String> {
-        todo!("interpret_declaration")
+    fn interpret_declaration(&mut self, decl: Rc<Declaration>) -> Result<(), String> {
+        match &*decl {
+            Declaration::Variable{ initializer, .. } => {
+                self.interpret_variable_declaration(
+                    decl.clone(),
+                    &initializer
+                )
+            },
+            _ => todo!("interpret_declaration")
+        }
+    }
+
+    fn interpret_variable_declaration(
+        &mut self,
+        decl: Rc<Declaration>, 
+        initializer: &Expression
+    ) -> Result<(), String> {
+        let value = self.interpret_expression(initializer)?;
+        match &*decl {
+            Declaration::Variable { name, .. } => {
+                self.env.define(name.lexeme.clone(), value)
+            },
+            _ => panic!("Internal error: expected variable declaration"),
+        }
     }
 
     fn interpret_expression_statement(&mut self, expr: &Expression, _type: &Type, _location: &SourceSpan) -> Result<(), String> {
@@ -82,10 +106,11 @@ impl Interpreter {
                 )
             },
             Expression::Literal(lit) => self.interpret_literal_expression(&lit),
-            Expression::Variable{ name, decl, location } => {
+            Expression::Variable{ name, decl, location, scope_distance } => {
                 self.interpret_variable_expression(
                     &name,
                     &decl,
+                    *scope_distance,
                     &location
                 )
             }
@@ -119,7 +144,13 @@ impl Interpreter {
         })
     }
 
-    fn interpret_variable_expression(&mut self, _name: &Token, _decl: &Rc<Declaration>, _location: &SourceSpan) -> Result<Value, String> {
+    fn interpret_variable_expression(
+        &mut self,
+        _name: &Token, 
+        _decl: &Rc<Declaration>, 
+        _scope_distance: usize, 
+        _location: &SourceSpan
+    ) -> Result<Value, String> {
         todo!("interpret_variable_expression")
     }
 }

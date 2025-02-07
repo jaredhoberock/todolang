@@ -170,11 +170,12 @@ impl SemanticAnalyzer {
         name: &Token, 
         location: SourceSpan
     ) -> Result<TypedExpression, Error> {
-        let decl = self.env.get_definition(&name.lexeme)
+        let (decl, scope_distance) = self.env.get_definition(&name.lexeme)
             .map_err(|e| Error::name(e, &location))?;
         Ok(TypedExpression::Variable {
             name: name.clone(),
             decl,
+            scope_distance,
             location,
         })
     }
