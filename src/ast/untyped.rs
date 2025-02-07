@@ -3,6 +3,7 @@ use crate::token::Token;
 
 #[derive(Debug)]
 pub enum LiteralValue {
+    Bool(bool),
     Number(f64),
     String(String),
 }
@@ -121,6 +122,10 @@ impl BlockStatement {
 
 #[derive(Debug)]
 pub enum Statement {
+    Assert {
+        expr: Expression, 
+        semi: Token,
+    },
     Block(BlockStatement),
     Decl(Declaration),
     Expr {
@@ -137,9 +142,12 @@ pub enum Statement {
 impl Statement {
     pub fn source_span(&self) -> SourceSpan {
         match &self {
+            Self::Assert{ expr, semi } => {
+                expr.source_span().merge(&semi.span)
+            },
             Self::Block(b) => b.source_span(),
             Self::Decl(d) => d.source_span(),
-            Self::Expr{ expr, semi} => {
+            Self::Expr{ expr, semi } => {
                 expr.source_span().merge(&semi.span)
             },
             Self::Print{ print, semi, .. } => {
@@ -153,4 +161,3 @@ impl Statement {
 pub struct Module {
     pub statements: Vec<Statement>,
 }
-

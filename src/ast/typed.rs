@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum LiteralValue {
+    Bool(bool),
     Number(f64),
     String(String),
 }
@@ -91,6 +92,11 @@ pub struct BlockStatement {
 
 #[derive(Debug)]
 pub enum Statement {
+    Assert {
+        expr: Expression,
+        type_: Type,
+        location: SourceSpan,
+    },
     Block(BlockStatement),
     Decl(Rc<Declaration>),
     Expr {

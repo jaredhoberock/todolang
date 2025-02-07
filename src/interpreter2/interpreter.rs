@@ -23,6 +23,10 @@ impl Interpreter {
 
     fn interpret_statement(&mut self, stmt: &Statement) -> Result<ControlFlow<Value>, String> {
         match stmt {
+            Statement::Assert { expr, location, .. } => {
+                self.interpret_assert_statement(&expr, &location)
+                    .map(|_| ControlFlow::Continue(()))
+            },
             Statement::Block(block) => self.interpret_block_statement(&block),
             Statement::Decl(decl)  => {
                 self.interpret_declaration(decl.clone())
@@ -40,6 +44,14 @@ impl Interpreter {
                     .map(|_| ControlFlow::Continue(()))
             }
         }
+    }
+
+    fn interpret_assert_statement(&mut self, expr: &Expression, _loc: &SourceSpan) -> Result<(), String> {
+        let val = self.interpret_expression(&expr)?;
+        if !val.as_bool() {
+            return Err("assert failed".into())
+        }
+        Ok(())
     }
 
     fn interpret_block_statement(&mut self, _block: &BlockStatement) -> Result<ControlFlow<Value>, String> {
@@ -92,6 +104,7 @@ impl Interpreter {
 
     fn interpret_literal_expression(&mut self, literal: &Literal) -> Result<Value, String> {
         Ok(match &literal.value {
+            LiteralValue::Bool(b)   => Value::Bool(*b),
             LiteralValue::Number(n) => Value::Number(*n),
             LiteralValue::String(s) => Value::String(s.clone()),
         })

@@ -135,7 +135,27 @@ impl<'a> Parser<'a> {
             })
     }
 
-    // literal := number_literal | string_literal
+    fn true_literal(&mut self) -> Result<Literal, ParseError> {
+        self.token(TokenKind::True)
+            .map(|token| {
+                Literal {
+                    value: LiteralValue::Bool(true),
+                    span: token.span
+                }
+            })
+    }
+
+    fn false_literal(&mut self) -> Result<Literal, ParseError> {
+        self.token(TokenKind::False)
+            .map(|token| {
+                Literal {
+                    value: LiteralValue::Bool(false),
+                    span: token.span
+                }
+            })
+    }
+
+    // literal := number_literal | string_literal | true_literal | false_literal
     #[restore_state_on_err]
     fn literal(&mut self) -> Result<Literal, ParseError> {
         let number = self.number_literal();
@@ -148,9 +168,21 @@ impl<'a> Parser<'a> {
             return string;
         }
 
+        let true_ = self.true_literal();
+        if true_.is_ok() {
+            return true_;
+        }
+
+        let false_ = self.false_literal();
+        if false_.is_ok() {
+            return false_;
+        }
+
         let errors = vec![
             number.unwrap_err(),
             string.unwrap_err(),
+            true_.unwrap_err(),
+            false_.unwrap_err(),
         ];
 
         Err(ParseError::combine(errors))
@@ -369,6 +401,15 @@ impl<'a> Parser<'a> {
         Err(ParseError::combine(errors))
     }
 
+    // assert_statement := "assert" expression ";"
+    #[restore_state_on_err]
+    fn assert_statement(&mut self) -> Result<Statement, ParseError> {
+        let _assert = self.token(TokenKind::Assert)?;
+        let expr = self.expression()?;
+        let semi = self.token(TokenKind::Semicolon)?;
+        Ok(Statement::Assert { expr, semi })
+    }
+
     // block_statement := "{" ( statement )* "}"
     #[restore_state_on_err]
     fn block_statement(&mut self) -> Result<BlockStatement, ParseError> {
@@ -407,9 +448,14 @@ impl<'a> Parser<'a> {
         Ok(Statement::Print { print, expr, semi } )
     }
 
-    // statement := block_statement | declaration | expression_statement | print_statement
+    // statement := assert_statement | block_statement | declaration | expression_statement | print_statement
     #[restore_state_on_err]
     fn statement(&mut self) -> Result<Statement, ParseError> {
+        let assert = self.assert_statement();
+        if assert.is_ok() {
+            return assert;
+        }
+
         let block = self.block_statement().map(Statement::Block);
         if block.is_ok() {
             return block;
@@ -431,6 +477,7 @@ impl<'a> Parser<'a> {
         }
 
         let errors = vec![
+            assert.unwrap_err(),
             block.unwrap_err(),
             decl.unwrap_err(),
             expr.unwrap_err(),

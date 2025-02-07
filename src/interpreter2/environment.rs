@@ -22,6 +22,7 @@ impl Function {
 
 #[derive(Clone, Debug)]
 pub enum Value {
+    Bool(bool),
     Function(Function),
     Number(f64),
     String(String),
@@ -29,8 +30,18 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn as_string(&self) -> String {
+    pub fn as_bool(&self) -> bool {
         match self {
+            Value::Bool(b) => *b,
+            _ => panic!("Value is not a 'bool'"),
+        }
+    }
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = match self {
+            Value::Bool(b) => b.to_string(),
             Value::Function(f) => f.to_string(),
             Value::Number(n) => {
                 let s = n.to_string();
@@ -42,12 +53,8 @@ impl Value {
             }
             Value::String(s) => s.clone(),
             Value::Unit => "()".to_string(),
-        }
-    }
-}
+        };
 
-impl std::fmt::Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.as_string())
+        write!(f, "{}", s)
     }
 }

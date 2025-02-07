@@ -7,7 +7,7 @@ use crate::ast::typed::LiteralValue as TypedLiteralValue;
 use crate::ast::typed::Literal as TypedLiteral;
 use crate::ast::typed::Statement as TypedStatement;
 use crate::token::Token;
-use crate::source_location::SourceSpan;
+use crate::source_location::{Locatable, SourceSpan};
 use crate::types::{unify, Type, TypeEnvironment};
 use super::environment::Environment;
 use super::environment::Error as NameError;
@@ -115,6 +115,7 @@ impl SemanticAnalyzer {
         location: SourceSpan
     ) -> Result<TypedExpression, Error> {
         let (value, type_) = match untyped_value {
+            LiteralValue::Bool(b)   => (TypedLiteralValue::Bool(*b), self.type_env.get_bool()),
             LiteralValue::Number(n) => (TypedLiteralValue::Number(*n), self.type_env.get_number()),
             LiteralValue::String(s) => (TypedLiteralValue::String(s.clone()), self.type_env.get_string()),
         };
@@ -148,6 +149,22 @@ impl SemanticAnalyzer {
 
     fn analyze_type_ascription(&mut self, ascription: &TypeAscription) -> Result<Type, Error> {
         self.analyze_type_expression(&ascription.expr)
+    }
+
+    fn analyze_assert_statement(&mut self, untyped_expr: &Expression, location: SourceSpan) -> Result<TypedStatement, Error> {
+        let expr = self.analyze_expression(&untyped_expr)?;
+        if !expr.type_().is_bool() {
+            return Err(Error::type_(
+                "Argument to 'assert' must be 'bool'",
+                &untyped_expr.source_span()
+            ))
+        }
+
+        Ok(TypedStatement::Assert {
+            expr,
+            type_: self.type_env.get_unit(),
+            location
+        })
     }
 
     fn analyze_block_statement(&mut self, stmt: &BlockStatement) -> Result<TypedBlockStatement, Error> {
@@ -253,6 +270,23 @@ impl SemanticAnalyzer {
         result
     }
 
+    fn analyze_expression_statement(&mut self, expr: &Expression, location: SourceSpan) -> Result<TypedStatement, Error> {
+        Ok(TypedStatement::Expr {
+            expr: self.analyze_expression(&expr)?,
+            type_: self.type_env.get_unit(),
+            location
+        })
+    }
+
+    fn analyze_print_statement(&mut self, untyped_expr: &Expression, location: SourceSpan) -> Result<TypedStatement, Error> {
+        let expr = self.analyze_expression(&untyped_expr)?;
+        Ok(TypedStatement::Print {
+            expr,
+            type_: self.type_env.get_unit(),
+            location
+        })
+    }
+
     fn analyze_variable_declaration(
         &mut self, 
         name: &Token, 
@@ -282,25 +316,9 @@ impl SemanticAnalyzer {
         Ok(decl)
     }
 
-    fn analyze_expression_statement(&mut self, expr: &Expression, location: SourceSpan) -> Result<TypedStatement, Error> {
-        Ok(TypedStatement::Expr {
-            expr: self.analyze_expression(&expr)?,
-            type_: self.type_env.get_unit(),
-            location
-        })
-    }
-
-    fn analyze_print_statement(&mut self, untyped_expr: &Expression, location: SourceSpan) -> Result<TypedStatement, Error> {
-        let expr = self.analyze_expression(&untyped_expr)?;
-        Ok(TypedStatement::Print {
-            expr,
-            type_: self.type_env.get_unit(),
-            location
-        })
-    }
-
     fn analyze_statement(&mut self, stmt: &Statement) -> Result<TypedStatement, Error> {
         match stmt {
+            Statement::Assert { expr, .. } => self.analyze_assert_statement(&expr, stmt.source_span()),
             Statement::Block(stmt) => self.analyze_block_statement(&stmt).map(TypedStatement::Block),
             Statement::Decl(decl) => self.analyze_declaration(&decl).map(TypedStatement::Decl),
             Statement::Expr { expr, .. } => self.analyze_expression_statement(&expr, stmt.source_span()),

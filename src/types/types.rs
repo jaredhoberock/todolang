@@ -5,11 +5,11 @@ use std::ops::Deref;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
-    Number,
-    String,
     Bool,
     Function(Vec<Type>, Type),
     InferenceVariable(usize),
+    Number,
+    String,
     Unit,
 }
 
@@ -18,6 +18,10 @@ pub enum Kind {
 pub struct Type(Intern<Kind>);
 
 impl Type {
+    pub fn is_bool(&self) -> bool {
+        matches!(**self, Kind::Bool)
+    }
+
     pub fn is_function(&self) -> bool {
         matches!(**self, Kind::Function(_,_))
     }
