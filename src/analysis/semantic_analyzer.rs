@@ -76,26 +76,6 @@ impl<T> MismatchLocation<T> for Result<T,TypeError> {
     }
 }
 
-fn function_body_return_type_location(expr: &Expression) -> SourceSpan {
-    match expr {
-        Expression::Block { statements, last_expr, .. } => {
-            if let Some(expr) = last_expr {
-                // If there's a trailing expression, use its location
-                return function_body_return_type_location(&*expr);
-            } else if !statements.is_empty() {
-                // Otherwise, return the span of the last statement
-                // XXX It would be better to just point at the semicolon,
-                //     but function declarations don't have a semicolon
-                statements.last().unwrap().source_span()
-            } else {
-                // If the block is empty, return the block's overall span
-                expr.source_span()
-            }
-        },
-        _ => expr.source_span(),
-    }
-}
-
 struct SemanticAnalyzer {
     env: Environment,
     type_env: TypeEnvironment2,
@@ -448,8 +428,10 @@ impl SemanticAnalyzer {
 
             // check return type against body
             slf.type_env.unify(return_type, body.type_())
-                .mismatch_loc(untyped_return_type.source_span(),
-                              function_body_return_type_location(&untyped_body))?;
+                .mismatch_loc(
+                    untyped_return_type.source_span(),
+                    body.type_defining_location()
+                )?;
 
             Ok(Rc::new(TypedDeclaration::Function {
                 name: name.clone(),

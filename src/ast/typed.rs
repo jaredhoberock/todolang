@@ -64,6 +64,36 @@ impl Expression {
             Self::Variable{ decl, .. } => decl.type_(),
         }
     }
+
+    pub fn location(&self) -> SourceSpan {
+        match &self {
+            Self::Binary{ location, .. }
+            | Self::Block { location, .. }
+            | Self::Call { location, .. }
+            | Self::Unary { location, .. }
+            | Self::Variable { location, .. }
+            => location.clone(),
+            Self::Literal(l) => l.location.clone(),
+        }
+    }
+
+    pub fn type_defining_location(&self) -> SourceSpan {
+        match &self {
+            Expression::Block { statements, last_expr, .. } => {
+                if let Some(expr) = last_expr {
+                    // If there's a trailing expression, use its location
+                    expr.type_defining_location()
+                } else if !statements.is_empty() {
+                    // Otherwise, use the last statement's location
+                    statements.last().unwrap().location()
+                } else {
+                    // If the block is empty, return the block's overall location
+                    self.location()
+                }
+            },
+            _ => self.location(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -89,6 +119,15 @@ pub enum Declaration {
 }
 
 impl Declaration {
+    pub fn location(&self) -> SourceSpan {
+        match &self {
+            Self::Function { location, .. }
+            | Self::Parameter { location, .. }
+            | Self::Variable { location, .. }
+            => location.clone()
+        }
+    }
+
     pub fn name(&self) -> &Token {
         match self {
             Self::Function { name, .. } => &name,
@@ -124,6 +163,18 @@ pub enum Statement {
         type_: Type,
         location: SourceSpan,
     },
+}
+
+impl Statement {
+    pub fn location(&self) -> SourceSpan {
+        match &self {
+            Self::Assert{ location, .. }
+            | Self::Expr { location, .. }
+            | Self::Print { location, .. }
+            => location.clone(),
+            Self::Decl(decl) => decl.as_ref().location(),
+        }
+    }
 }
 
 #[derive(Debug)]
