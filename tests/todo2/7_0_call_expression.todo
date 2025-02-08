@@ -1,0 +1,6 @@
+fun f(arg: Number) -> Number {
+  arg + 13
+}
+
+assert f(0) == 13;
+print "OK";

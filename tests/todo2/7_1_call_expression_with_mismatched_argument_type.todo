@@ -1,0 +1,5 @@
+fun f(arg: Number) -> Number {
+  arg + 13
+}
+
+f("hello");

@@ -14,7 +14,7 @@ pub struct Error {
     pub location: SourceSpan,
 }
 
-trait ErrorLocation<T> {
+pub(crate) trait ErrorLocation<T> {
     fn err_loc(self, location: &SourceSpan) -> Result<T,Error>;
 }
 
@@ -37,7 +37,8 @@ impl Interpreter {
         Self { env: Environment::new_shared_global() }
     }
 
-    fn with_environment<T>(
+    // this is pub(crate) for Function::call's use
+    pub(crate) fn with_environment<T>(
         &mut self,
         new_env: Rc<RefCell<Environment>>,
         f: impl FnOnce(&mut Self) -> T,
@@ -153,7 +154,8 @@ impl Interpreter {
         Ok(())
     }
 
-    fn interpret_expression(&mut self, expr: &Expression) -> Result<Value,Error> {
+    // this is pub(crate) for Function::call's use
+    pub(crate) fn interpret_expression(&mut self, expr: &Expression) -> Result<Value,Error> {
         match expr {
             Expression::Binary{ lhs, op, rhs, type_, location } => {
                 self.interpret_binary_expression(
@@ -245,11 +247,23 @@ impl Interpreter {
 
     fn interpret_call_expression(
         &mut self,
-        _callee: &Expression, 
-        _arguments: &Vec<Expression>, 
+        callee: &Expression, 
+        arguments: &Vec<Expression>, 
         _type_: &Type,
         _location: &SourceSpan) -> Result<Value,Error> {
-        todo!("interpret_call_expression")
+        let callee_value = self.interpret_expression(&callee)?;
+
+        let function = match &callee_value {
+            Value::Function(f) => f,
+            _ => panic!("Internal error: callee is not a function"),
+        };
+
+        let mut argument_values = Vec::new();
+        for arg in arguments {
+            argument_values.push(self.interpret_expression(&arg)?);
+        }
+
+        function.call(self, &argument_values)
     }
 
     fn interpret_literal_expression(&mut self, literal: &Literal) -> Result<Value,Error> {

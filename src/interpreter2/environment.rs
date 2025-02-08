@@ -3,6 +3,7 @@ use crate::token::TokenKind;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use super::interpreter::*;
 
 #[derive(Clone, Debug)]
 pub struct Function {
@@ -13,6 +14,33 @@ pub struct Function {
 impl Function {
     pub fn new(decl: Rc<Declaration>, closure: Rc<RefCell<Environment>>) -> Self {
         Function { decl, closure }
+    }
+
+    pub fn call(&self, interp: &mut Interpreter, args: &Vec<Value>) -> Result<Value,Error> {
+        // create a new environment for the function call
+        let env = Environment::new_enclosed_shared(self.closure.clone());
+
+        // get the parameter names and body
+        let (parameter_names, body) = match self.decl.as_ref() {
+            Declaration::Function{ parameters, body, .. } => {
+                let parameter_names: Vec<String> = parameters.iter()
+                    .map(|p| p.name().lexeme.clone())
+                    .collect();
+                (parameter_names, body)
+            },
+            _ => panic!("Function has bad declaration"),
+        };
+
+        // bind arguments to parameters
+        for (name, arg) in parameter_names.iter().zip(args.iter()) {
+            env.define(name.clone(), arg.clone())
+                .expect("Internal error: defining function parameter failed");
+        }
+
+        // interpret the call
+        interp.with_environment(env, |interpreter| {
+            interpreter.interpret_expression(&body)
+        })
     }
 
     fn to_string(&self) -> String {
