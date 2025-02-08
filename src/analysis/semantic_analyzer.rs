@@ -126,7 +126,7 @@ impl SemanticAnalyzer {
     fn analyze_binary_expression(
         &mut self, 
         untyped_lhs: &Box<Expression>,
-        op: &Token,
+        op: &BinOp,
         untyped_rhs: &Box<Expression>,
         location: SourceSpan
     ) -> Result<TypedExpression, Error> {
@@ -140,12 +140,13 @@ impl SemanticAnalyzer {
         let str_ty  = self.type_env.get_string();
 
         // determine input and result types
+        use BinOpKind::*;
         let (input_ty, result_ty) = match op.kind {
-            TokenKind::And | TokenKind::Or => (bool_ty, bool_ty),
-            TokenKind::BangEqual | TokenKind::EqualEqual => (lhs_ty, bool_ty),
-            TokenKind::Greater | TokenKind::GreaterEqual | TokenKind::Less | TokenKind::LessEqual => (num_ty, bool_ty),
-            TokenKind::Minus | TokenKind::Slash | TokenKind::Star => (num_ty, num_ty),
-            TokenKind::Plus => {
+            And | Or => (bool_ty, bool_ty),
+            NotEq | Eq => (lhs_ty, bool_ty),
+            Gt | GtEq | Lt | LtEq => (num_ty, bool_ty),
+            Sub | Div | Mul => (num_ty, num_ty),
+            Add => {
                 // plus requires both parameters to be either numbers or strings
                 if self.type_env.unify(num_ty, lhs_ty).is_ok() {
                     (num_ty, num_ty)
@@ -153,12 +154,6 @@ impl SemanticAnalyzer {
                     (str_ty, str_ty)
                 }
             },
-            // XXX this sucks, we need to match on operators, not tokens
-            _ => {
-                return Err(Error::general(
-                    format!("Unknown binary operator '{}'", op.lexeme),
-                    &location))
-            }
         };
 
         // unify inputs

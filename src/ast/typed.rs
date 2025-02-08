@@ -1,6 +1,8 @@
 use crate::source_location::SourceSpan;
 use crate::token::Token;
 use crate::types::Type;
+pub use super::untyped::BinOp;
+pub use super::untyped::BinOpKind;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -21,7 +23,7 @@ pub struct Literal {
 pub enum Expression {
     Binary {
         lhs: Box<Self>,
-        op: Token,
+        op: BinOp,
         rhs: Box<Self>,
         type_: Type,
         location: SourceSpan,

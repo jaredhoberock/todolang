@@ -390,7 +390,7 @@ impl<'a> Parser<'a> {
 
             result = Expression::Binary {
                 lhs: Box::new(result),
-                op,
+                op: BinOp::from_token(op),
                 rhs: Box::new(rhs),
             }
         }
@@ -409,7 +409,7 @@ impl<'a> Parser<'a> {
 
             result = Expression::Binary {
                 lhs: Box::new(result),
-                op,
+                op: BinOp::from_token(op),
                 rhs: Box::new(rhs),
             }
         }
@@ -427,7 +427,7 @@ impl<'a> Parser<'a> {
 
             result = Expression::Binary {
                 lhs: Box::new(result),
-                op,
+                op: BinOp::from_token(op),
                 rhs: Box::new(rhs),
             }
         }
@@ -446,7 +446,7 @@ impl<'a> Parser<'a> {
 
             result = Expression::Binary {
                 lhs: Box::new(result),
-                op,
+                op: BinOp::from_token(op),
                 rhs: Box::new(rhs),
             }
         }
@@ -478,7 +478,7 @@ impl<'a> Parser<'a> {
 
             result = Expression::Binary {
                 lhs: Box::new(result),
-                op,
+                op: BinOp::from_token(op),
                 rhs: Box::new(rhs),
             }
         }
@@ -497,7 +497,7 @@ impl<'a> Parser<'a> {
 
             result = Expression::Binary {
                 lhs: Box::new(result),
-                op,
+                op: BinOp::from_token(op),
                 rhs: Box::new(rhs),
             }
         }

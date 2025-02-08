@@ -1,5 +1,5 @@
 use crate::source_location::SourceSpan;
-use crate::token::Token;
+use crate::token::{Token, TokenKind};
 
 #[derive(Debug)]
 pub enum LiteralValue {
@@ -14,11 +14,54 @@ pub struct Literal {
     pub span: SourceSpan,
 }
 
+#[derive(Debug, Clone)]
+pub enum BinOpKind {
+    Add,
+    And,
+    Div,
+    Eq,
+    Gt,
+    GtEq,
+    Lt,
+    LtEq,
+    Mul,
+    NotEq,
+    Or,
+    Sub,
+}
+
+#[derive(Debug, Clone)]
+pub struct BinOp {
+    pub kind: BinOpKind,
+    pub span: SourceSpan,
+}
+
+impl BinOp {
+    pub fn from_token(op: Token) -> Self {
+        let kind = match op.kind {
+            TokenKind::Plus => BinOpKind::Add,
+            TokenKind::And => BinOpKind::And,
+            TokenKind::Slash => BinOpKind::Div,
+            TokenKind::EqualEqual => BinOpKind::Eq,
+            TokenKind::Greater => BinOpKind::Gt,
+            TokenKind::GreaterEqual => BinOpKind::GtEq,
+            TokenKind::Less => BinOpKind::Lt,
+            TokenKind::LessEqual => BinOpKind::LtEq,
+            TokenKind::Star => BinOpKind::Mul,
+            TokenKind::BangEqual => BinOpKind::NotEq,
+            TokenKind::Or => BinOpKind::Or,
+            TokenKind::Minus => BinOpKind::Sub,
+            _ => panic!("Internal error: unknown binary operator '{}'", op.lexeme),
+        };
+        Self { kind, span: op.span }
+    }
+}
+
 #[derive(Debug)]
 pub enum Expression {
     Binary {
         lhs: Box<Self>,
-        op: Token,
+        op: BinOp,
         rhs: Box<Self>,
     },
     Block {

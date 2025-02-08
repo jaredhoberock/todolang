@@ -1,5 +1,4 @@
 use crate::ast::typed::*;
-use crate::token::TokenKind;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -81,31 +80,33 @@ impl Value {
         }
     }
 
-    pub fn evaluate_binary_operation(&self, op: &TokenKind, rhs: &Self) -> Self {
+    pub fn evaluate_binary_operation(&self, op: &BinOp, rhs: &Self) -> Self {
         use Value::*;
+        use BinOpKind::*;
 
-        match op {
-            TokenKind::BangEqual    => Bool(self != rhs),
-            TokenKind::EqualEqual   => Bool(self == rhs),
-            TokenKind::Greater      => Bool(self.as_f64() > rhs.as_f64()),
-            TokenKind::GreaterEqual => Bool(self.as_f64() >= rhs.as_f64()),
-            TokenKind::Less         => Bool(self.as_f64() <  rhs.as_f64()),
-            TokenKind::LessEqual    => Bool(self.as_f64() <= rhs.as_f64()),
-            TokenKind::Minus        => Number(self.as_f64() - rhs.as_f64()),
-            TokenKind::Plus => match (self, rhs) {
+        match op.kind {
+            Add   => match (self, rhs) {
                 (Number(n1), Number(n2)) => Number(n1 + n2),
                 (String(s1), String(s2)) => String(s1.clone() + &s2),
                 (_, _) => panic!("Operands must be two numbers or two strings."),
             },
-            TokenKind::Slash => match (self, rhs) {
+            And   => Bool(self.as_bool() && rhs.as_bool()),
+            Div => match (self, rhs) {
                 (Number(n1), Number(n2)) => Number(n1 / n2),
                 (_, _) => panic!("Operands must be two numbers."),
             },
-            TokenKind::Star => match (self, rhs) {
+            Eq    => Bool(self == rhs),
+            Gt    => Bool(self.as_f64() > rhs.as_f64()),
+            GtEq  => Bool(self.as_f64() >= rhs.as_f64()),
+            Lt    => Bool(self.as_f64() <  rhs.as_f64()),
+            LtEq  => Bool(self.as_f64() <= rhs.as_f64()),
+            Mul => match (self, rhs) {
                 (Number(n1), Number(n2)) => Number(n1 * n2),
                 (_, _) => panic!("Operands must be two numbers."),
             },
-            _ => panic!("Unexpected operator in binary operation."),
+            Or    => Bool(self.as_bool() || self.as_bool()),
+            NotEq => Bool(self != rhs),
+            Sub   => Number(self.as_f64() - rhs.as_f64()),
         }
     }
 }

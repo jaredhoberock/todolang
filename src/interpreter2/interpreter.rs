@@ -205,7 +205,7 @@ impl Interpreter {
     fn interpret_binary_expression(
         &mut self,
         lhs: &Box<Expression>,
-        op: &Token,
+        op: &BinOp,
         rhs: &Box<Expression>,
         _type_: &Type,
         _location: &SourceSpan
@@ -214,14 +214,14 @@ impl Interpreter {
         let lhs_value = self.interpret_expression(&*lhs)?;
         match op.kind {
             // logical operations need to short circuit
-            TokenKind::Or if lhs_value.as_bool() => Ok(lhs_value),
-            TokenKind::And if !lhs_value.as_bool() => Ok(lhs_value),
-            TokenKind::Or | TokenKind::And => self.interpret_expression(&*rhs),
+            BinOpKind::Or if lhs_value.as_bool() => Ok(lhs_value),
+            BinOpKind::And if !lhs_value.as_bool() => Ok(lhs_value),
+            BinOpKind::Or | BinOpKind::And => self.interpret_expression(&*rhs),
 
             // other binary operations
             _ => {
               let rhs_value = self.interpret_expression(&*rhs)?;
-              Ok(lhs_value.evaluate_binary_operation(&op.kind, &rhs_value))
+              Ok(lhs_value.evaluate_binary_operation(&op, &rhs_value))
             }
         }
     }
