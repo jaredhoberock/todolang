@@ -1,5 +1,6 @@
 use internment::Intern;
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 
@@ -17,7 +18,34 @@ pub enum Kind {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Type(Intern<Kind>);
 
+/// A Substitution maps inference variable IDs to the types that have been inferred
+pub type Substitution = HashMap<usize, Type>;
+
 impl Type {
+    /// Recursively replaces any inference variable with their bindings from the substitution.
+    pub fn apply(&self, subst: &Substitution) -> Type {
+        match **self {
+            Kind::InferenceVariable(id) => {
+                if let Some(t) = subst.get(&id) {
+                    // recursively apply when substitution maps to another variable
+                    t.apply(subst)
+                } else {
+                    self.clone()
+                }
+            },
+            Kind::Function(ref params, ref ret) => {
+                let new_params: Vec<Type> = params
+                    .iter()
+                    .map(|t| t.apply(subst))
+                    .collect();
+                let new_ret = ret.apply(subst);
+                Type(Intern::new(Kind::Function(new_params, new_ret)))
+            },
+            // for concrete types, no substitution is needed
+            _ => self.clone(),
+        }
+    }
+
     pub fn is_bool(&self) -> bool {
         matches!(**self, Kind::Bool)
     }

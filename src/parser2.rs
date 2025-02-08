@@ -111,6 +111,34 @@ impl<'a> Parser<'a> {
         Err(ParseError::combine(errors))
     }
 
+    #[restore_state_on_err]
+    fn any_comparison_operator(&mut self) -> Result<Token, ParseError> {
+        let gt = self.token(TokenKind::Greater);
+        if gt.is_ok() {
+            return gt;
+        }
+
+        let gte = self.token(TokenKind::GreaterEqual);
+        if gte.is_ok() {
+            return gte;
+        }
+
+        let lt = self.token(TokenKind::Less);
+        if lt.is_ok() {
+            return lt;
+        }
+
+        let lte = self.token(TokenKind::LessEqual);
+        if lte.is_ok() {
+            return lte;
+        }
+
+        Err(ParseError::new(
+            "Expected comparison operator".to_string(),
+            self.remaining,
+        ))
+    }
+
     fn identifier(&mut self) -> Result<Token, ParseError> {
         self.token(TokenKind::Identifier)
     }
@@ -201,7 +229,7 @@ impl<'a> Parser<'a> {
             .map_err(ParseError::format_message("{} before block"))?;
 
         let mut statements = Vec::new();
-        let mut expr = None;
+        let mut last_expr = None;
 
         // loop until we encounter the closing brace
         let rbrace = loop {
@@ -219,7 +247,7 @@ impl<'a> Parser<'a> {
             // try to parse an expression
             let maybe_expr = self.expression();
             if let Ok(e) = maybe_expr {
-                expr = Some(Box::new(e));
+                last_expr = Some(Box::new(e));
                 break self.token(TokenKind::RightBrace)
                     .map_err(ParseError::format_message("{} after block"))?;
             }
@@ -235,7 +263,7 @@ impl<'a> Parser<'a> {
         Ok(Expression::Block{
             lbrace, 
             statements,
-            expr, 
+            last_expr, 
             rbrace,
         })
     }
@@ -302,7 +330,7 @@ impl<'a> Parser<'a> {
 
     // call := primary_expression ( "." identifier | "(" arguments? ")" )*
     #[restore_state_on_err]
-    fn call_expression(&mut self) -> Result<Expression, ParseError> {
+    fn call(&mut self) -> Result<Expression, ParseError> {
         let mut result = self.primary_expression()?;
 
         loop {
@@ -345,9 +373,136 @@ impl<'a> Parser<'a> {
         Ok(result)
     }
 
-    // expression := call_expression
+    // factor := unary ( ( "/" | "*" ) ) unary )*
+    #[restore_state_on_err]
+    fn factor(&mut self) -> Result<Expression, ParseError> {
+        let mut result = self.unary()?;
+
+        while let Ok(op) = self.either_token(TokenKind::Slash, TokenKind::Star) {
+            // parse the rhs
+            let rhs = self.unary()?;
+
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op,
+                rhs: Box::new(rhs),
+            }
+        }
+
+        Ok(result)
+    }
+
+    // term := factor ( ( "-" | "+" ) factor )*
+    #[restore_state_on_err]
+    fn term(&mut self) -> Result<Expression, ParseError> {
+        let mut result = self.factor()?;
+
+        while let Ok(op) = self.either_token(TokenKind::Minus, TokenKind::Plus) {
+            // parse the rhs
+            let rhs = self.factor()?;
+
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op,
+                rhs: Box::new(rhs),
+            }
+        }
+
+        Ok(result)
+    }
+
+    // comparison := term ( ( ">" | ">=" | "<" | "<=" ) term )*
+    fn comparison(&mut self) -> Result<Expression, ParseError> {
+        let mut result = self.term()?;
+
+        while let Ok(op) = self.any_comparison_operator() {
+            // parse the rhs
+            let rhs = self.term()?;
+
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op,
+                rhs: Box::new(rhs),
+            }
+        }
+
+        Ok(result)
+    }
+
+    // equality := comparison ( ( "!=" | "==" ) comparison )*
+    #[restore_state_on_err]
+    fn equality(&mut self) -> Result<Expression, ParseError> {
+        let mut result = self.comparison()?;
+
+        while let Ok(op) = self.either_token(TokenKind::BangEqual, TokenKind::EqualEqual) {
+            // parse the rhs
+            let rhs = self.comparison()?;
+
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op,
+                rhs: Box::new(rhs),
+            }
+        }
+
+        Ok(result)
+    }
+
+    // unary := ( "|" | "-" ) | call
+    #[restore_state_on_err]
+    fn unary(&mut self) -> Result<Expression, ParseError> {
+        if let Ok(op) = self.either_token(TokenKind::Bang, TokenKind::Minus) {
+            Ok(Expression::Unary {
+                op,
+                operand: Box::new(self.unary()?),
+            })
+        } else {
+            self.call()
+        }
+    }
+
+    // logical_and := equality ( "and" equality)*
+    #[restore_state_on_err]
+    fn logical_and(&mut self) -> Result<Expression, ParseError> {
+        let mut result = self.equality()?;
+
+        while let Ok(op) = self.token(TokenKind::And) {
+            // parse the rhs
+            let rhs = self.equality()?;
+
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op,
+                rhs: Box::new(rhs),
+            }
+        }
+
+        Ok(result)
+    }
+
+    // logical_or := logical_and ( "or" logical_and)*
+    #[restore_state_on_err]
+    fn logical_or(&mut self) -> Result<Expression, ParseError> {
+        let mut result = self.logical_and()?;
+
+        while let Ok(op) = self.token(TokenKind::Or) {
+            // parse the rhs
+            let rhs = self.logical_and()?;
+
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op,
+                rhs: Box::new(rhs),
+            }
+        }
+
+        Ok(result)
+    }
+
+    // expression := logical_or
+    #[restore_state_on_err]
     fn expression(&mut self) -> Result<Expression, ParseError> {
-        self.call_expression()
+        self.logical_or()
     }
 
     // type_expression := identifier

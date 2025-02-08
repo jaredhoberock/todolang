@@ -5,9 +5,10 @@ use crate::ast::typed::Expression as TypedExpression;
 use crate::ast::typed::LiteralValue as TypedLiteralValue;
 use crate::ast::typed::Literal as TypedLiteral;
 use crate::ast::typed::Statement as TypedStatement;
-use crate::token::Token;
-use crate::source_location::{Locatable, SourceSpan};
-use crate::types::{unify, Type, TypeEnvironment};
+use crate::token::{Token, TokenKind};
+use crate::source_location::SourceSpan;
+use crate::types::Error2 as TypeError;
+use crate::types::{Type, TypeEnvironment2};
 use super::environment::Environment;
 use super::environment::Error as NameError;
 use std::rc::Rc;
@@ -17,38 +18,54 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("{0}")]
+    General(String, SourceSpan),
+
+    #[error("{0}")]
     Name(NameError, Option<SourceSpan>),
 
     #[error("{0}")]
-    Type(String, Option<SourceSpan>),
+    Type(TypeError, Option<SourceSpan>),
 }
 
 impl Error {
-    fn name(e: NameError, location: &SourceSpan) -> Self {
-        Error::Name(e, Some(location.clone()))
-    }
-
-    fn type_(msg: impl Into<String>, location: &SourceSpan) -> Self {
-        Error::Type(msg.into(), Some(location.clone()))
+    pub fn general(msg: impl Into<String>, location: &SourceSpan) -> Self {
+        Self::General(msg.into(), location.clone())
     }
 
     pub fn location(&self) -> Option<SourceSpan> {
         match self {
+            Error::General(_, loc) => Some(loc.clone()),
             Error::Name(_, loc) => loc.clone(),
             Error::Type(_, loc) => loc.clone(),
         }
     }
 }
 
+trait ErrorLocation<T> {
+    fn err_loc(self, location: &SourceSpan) -> Result<T, Error>;
+}
+
+
+impl<T> ErrorLocation<T> for Result<T, NameError> {
+    fn err_loc(self, location: &SourceSpan) -> Result<T, Error> {
+        self.map_err(|e| Error::Name(e, Some(location.clone())))
+    }
+}
+
+impl<T> ErrorLocation<T> for Result<T, TypeError> {
+    fn err_loc(self, location: &SourceSpan) -> Result<T, Error> {
+        self.map_err(|e| Error::Type(e, Some(location.clone())))
+    }
+}
 
 struct SemanticAnalyzer {
     env: Environment,
-    type_env: TypeEnvironment,
+    type_env: TypeEnvironment2,
 }
 
 impl SemanticAnalyzer {
     pub fn new() -> Self {
-        Self { env: Environment::new(), type_env: TypeEnvironment::new(), }
+        Self { env: Environment::new(), type_env: TypeEnvironment2::new(), }
     }
 
     // this wraps the invocation of f(self) in a new scope
@@ -65,10 +82,13 @@ impl SemanticAnalyzer {
 
     fn analyze_expression(&mut self, expr: &Expression) -> Result<TypedExpression, Error> {
         match expr {
-            Expression::Block{ statements, expr: maybe_expr, .. } => {
+            Expression::Binary { lhs, op, rhs } => {
+                self.analyze_binary_expression(&lhs, &op, &rhs, expr.source_span())
+            },
+            Expression::Block{ statements, last_expr, .. } => {
                 self.analyze_block_expression(
                     &statements,
-                    &maybe_expr,
+                    &last_expr,
                     expr.source_span()
                 )
             },
@@ -80,14 +100,91 @@ impl SemanticAnalyzer {
                 )
             },
             Expression::Literal(lit) => self.analyze_literal_expression(&lit.value, expr.source_span()),
+            Expression::Unary{ op, operand } => self.analyze_unary_expression(&op, &operand, expr.source_span()),
             Expression::Variable{ name } => self.analyze_variable_expression(&name, expr.source_span()),
         }
+    }
+
+    fn analyze_binary_expression(
+        &mut self, 
+        untyped_lhs: &Box<Expression>,
+        op: &Token,
+        untyped_rhs: &Box<Expression>,
+        location: SourceSpan
+    ) -> Result<TypedExpression, Error> {
+        let lhs = self.analyze_expression(&*untyped_lhs)?;
+        let rhs = self.analyze_expression(&*untyped_rhs)?;
+
+        let lhs_ty = lhs.type_();
+        let rhs_ty = rhs.type_();
+        let bool_ty = self.type_env.get_bool();
+        let num_ty  = self.type_env.get_number();
+        let str_ty  = self.type_env.get_string();
+
+        // determine the result type and impose constraints
+        let result_type = match op.kind {
+            // for 'and' and 'or', lhs & rhs must be bool
+            TokenKind::And | TokenKind::Or => {
+                self.type_env.unify(bool_ty, lhs_ty).err_loc(&location)?;
+                self.type_env.unify(bool_ty, rhs_ty).err_loc(&location)?;
+                bool_ty
+            },
+            // for equality, lhs & rhs must have the same type
+            TokenKind::BangEqual | TokenKind::EqualEqual => {
+                self.type_env.unify(lhs_ty, rhs_ty).err_loc(&location)?;
+                bool_ty
+            },
+            // for comparisons, both must be numbers
+            TokenKind::Greater | TokenKind::GreaterEqual | TokenKind::Less | TokenKind::LessEqual => {
+                self.type_env.unify(num_ty, lhs_ty).err_loc(&location)?;
+                self.type_env.unify(num_ty, rhs_ty).err_loc(&location)?;
+                bool_ty
+            },
+            // for arithmetic, both must be numbers
+            TokenKind::Minus | TokenKind::Slash | TokenKind::Star => {
+                self.type_env.unify(num_ty, lhs_ty).err_loc(&location)?;
+                self.type_env.unify(num_ty, rhs_ty).err_loc(&location)?;
+                num_ty   
+            },
+            // for plus, both must be numbers or strings
+            TokenKind::Plus => {
+                // try unifying as numbers
+                if self.type_env.unify(num_ty, lhs_ty).is_ok() &&
+                   self.type_env.unify(num_ty, rhs_ty).is_ok() {
+                    num_ty
+                }
+                // otherwise, try unifying as strings
+                else if self.type_env.unify(str_ty, lhs_ty).is_ok() &&
+                        self.type_env.unify(str_ty, rhs_ty).is_ok() {
+                    str_ty
+                }
+                else {
+                    return Err(Error::general(
+                        "operator '+' requires both operands to be either 'Number' or 'String'",
+                        &location))
+                }
+            },
+
+            _ => {
+                return Err(Error::general(
+                    format!("Unknown binary operator '{}'", op.lexeme),
+                    &location))
+            }
+        };
+
+        Ok(TypedExpression::Binary {
+            lhs: Box::new(lhs),
+            op: op.clone(),
+            rhs: Box::new(rhs),
+            type_: result_type,
+            location
+        })
     }
 
     fn analyze_block_expression(
         &mut self,
         untyped_statements: &Vec<Statement>,
-        untyped_expr: &Option<Box<Expression>>,
+        untyped_last_expr: &Option<Box<Expression>>,
         location: SourceSpan
     ) -> Result<TypedExpression, Error> {
         self.with_new_scope(|slf| {
@@ -100,7 +197,7 @@ impl SemanticAnalyzer {
             }
 
             // analyze a possible final expression
-            let expr = if let Some(e) = &untyped_expr {
+            let last_expr = if let Some(e) = &untyped_last_expr {
                 let typed_expr = slf.analyze_expression(&*e)?;
                 type_ = typed_expr.type_();
                 Some(Box::new(typed_expr))
@@ -110,7 +207,7 @@ impl SemanticAnalyzer {
 
             Ok(TypedExpression::Block {
                 statements,
-                expr,
+                last_expr,
                 type_,
                 location,
             })
@@ -125,7 +222,7 @@ impl SemanticAnalyzer {
     ) -> Result<TypedExpression, Error> {
         let callee = self.analyze_expression(&untyped_callee)?;
         if !callee.type_().is_function() {
-            return Err(Error::type_("Cannot call non-function.", &location))
+            return Err(Error::general("Cannot call non-function", &location))
         }
 
         let mut arguments = Vec::new();
@@ -138,8 +235,7 @@ impl SemanticAnalyzer {
 
         let result_type = callee.type_().function_return_type();
         let call_type = self.type_env.get_function(argument_types, result_type);
-        unify(callee.type_(), call_type)
-            .map_err(|e| Error::type_(format!("{}", e), &location))?;
+        self.type_env.unify(callee.type_(), call_type).err_loc(&location)?;
 
         Ok(TypedExpression::Call {
             callee: Box::new(callee),
@@ -165,13 +261,42 @@ impl SemanticAnalyzer {
         ))
     }
 
+    fn analyze_unary_expression(
+        &mut self,
+        op: &Token,
+        untyped_operand: &Box<Expression>,
+        location: SourceSpan
+    ) -> Result<TypedExpression, Error> {
+        let operand = self.analyze_expression(&*untyped_operand)?;
+        let expected_type = match op.kind {
+            TokenKind::Bang  => self.type_env.get_bool(),
+            TokenKind::Minus => self.type_env.get_number(),
+            _ => {
+                let e = Error::general(format!("Unknown unary operator '{}'", op.lexeme), &location);
+                return Err(e)
+            }
+        };
+
+        // add a unification constraint
+        self.type_env.unify(expected_type.clone(), operand.type_().clone())
+            .err_loc(&location)?;
+
+        Ok(TypedExpression::Unary {
+            op: op.clone(),
+            operand: Box::new(operand),
+            type_: expected_type,
+            location,
+        })
+    }
+
     fn analyze_variable_expression(
         &mut self,
         name: &Token, 
         location: SourceSpan
     ) -> Result<TypedExpression, Error> {
-        let (decl, scope_distance) = self.env.get_definition(&name.lexeme)
-            .map_err(|e| Error::name(e, &location))?;
+        let (decl, scope_distance) = self.env
+            .get_definition(&name.lexeme)
+            .err_loc(&location)?;
         Ok(TypedExpression::Variable {
             name: name.clone(),
             decl,
@@ -183,9 +308,10 @@ impl SemanticAnalyzer {
     fn analyze_type_expression(&mut self, expr: &TypeExpression) -> Result<Type, Error> {
         self.type_env
             .lookup_type(&expr.identifier.lexeme)
-            .ok_or_else(|| {
-                Error::type_(format!("Unknown type: '{}'", &expr.identifier.lexeme), &expr.source_span())
-            })
+            .ok_or_else(|| { Error::general(
+                format!("Unknown type: '{}'", &expr.identifier.lexeme),
+                &expr.source_span()
+            )})
     }
 
     fn analyze_type_ascription(&mut self, ascription: &TypeAscription) -> Result<Type, Error> {
@@ -195,7 +321,7 @@ impl SemanticAnalyzer {
     fn analyze_assert_statement(&mut self, untyped_expr: &Expression, location: SourceSpan) -> Result<TypedStatement, Error> {
         let expr = self.analyze_expression(&untyped_expr)?;
         if !expr.type_().is_bool() {
-            return Err(Error::type_(
+            return Err(Error::general(
                 "Argument to 'assert' must be 'bool'",
                 &untyped_expr.source_span()
             ))
@@ -232,7 +358,7 @@ impl SemanticAnalyzer {
     fn analyze_parameter(&mut self, param: &Parameter) -> Result<Rc<TypedDeclaration>, Error> {
         let type_ = self.analyze_type_ascription(&param.ascription)?;
         self.env.declare(&param.name.lexeme, type_)
-            .map_err(|e| Error::name(e, &param.source_span()))?;
+            .err_loc(&param.source_span())?;
 
         let result = Rc::new(TypedDeclaration::Parameter {
             name: param.name.clone(),
@@ -252,8 +378,8 @@ impl SemanticAnalyzer {
         location: SourceSpan) -> Result<Rc<TypedDeclaration>, Error>
     {
         // declare the function with an unknown type
-        self.env.declare(&name.lexeme, self.type_env.get_unknown())
-            .map_err(|e| Error::name(e, &location))?;
+        self.env.declare(&name.lexeme, self.type_env.fresh())
+            .err_loc(&location)?;
 
         // enter function scope
         let result = self.with_new_scope(|slf| {
@@ -265,18 +391,15 @@ impl SemanticAnalyzer {
             let param_types = parameters.iter().map(|p| p.type_()).collect();
 
             // XXX TODO analyze return type ascription
-            let result_type = slf.type_env.get_unknown();
+            let result_type = slf.type_env.fresh();
             let fun_type = slf.type_env.get_function(param_types, result_type);
 
             // analyze body
             let body = slf.analyze_expression(&untyped_body)?;
 
             // check return type against body
-            // XXX we need to do substitution to get the function's inferred type
-            unify(result_type, body.type_())
-                .map_err(|e| {
-                    Error::type_(format!("{}", e), &location)
-                })?;
+            slf.type_env.unify(result_type, body.type_())
+                .err_loc(&location)?;
 
             Ok(Rc::new(TypedDeclaration::Function {
                 name: name.clone(),
@@ -321,13 +444,11 @@ impl SemanticAnalyzer {
         let expected_ty = self.analyze_type_ascription(ascription)?;
         self.env
             .declare(&name.lexeme, expected_ty)
-            .map_err(|e| Error::name(e, &location))?;
+            .err_loc(&location)?;
         let typed_initializer = self.analyze_expression(&initializer)?;
 
-        unify(expected_ty, typed_initializer.type_())
-            .map_err(|e| {
-                Error::type_(format!("{}", e), &location)
-            })?;
+        self.type_env.unify(expected_ty, typed_initializer.type_())
+            .err_loc(&location)?;
 
         let decl = Rc::new(TypedDeclaration::Variable{
             name: name.clone(),

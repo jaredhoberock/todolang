@@ -1,0 +1,20 @@
+assert 1 + 1 == 2;
+assert 2 + 2 != 5;
+
+// Arithmetic operators
+assert 5 - 3 == 2;
+assert 3 * 4 == 12;
+assert 10 / 2 == 5;
+assert 1 + 2 * 3 == 7;
+
+// Relational operators
+assert 3 < 5;
+assert 5 > 3;
+assert 3 <= 3;
+assert 5 >= 3;
+
+// Logical operators
+assert true and true;
+assert true or false;
+
+print "OK";

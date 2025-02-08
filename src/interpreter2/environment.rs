@@ -1,4 +1,5 @@
 use crate::ast::typed::*;
+use crate::token::TokenKind;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -19,7 +20,15 @@ impl Function {
     }
 }
 
-#[derive(Clone, Debug)]
+impl PartialEq for Function {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.decl, &other.decl)
+    }
+}
+
+impl Eq for Function {}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Bool(bool),
     Function(Function),
@@ -36,7 +45,42 @@ impl Value {
     pub fn as_bool(&self) -> bool {
         match self {
             Value::Bool(b) => *b,
-            _ => panic!("Value is not a 'bool'"),
+            _ => panic!("Value is not a 'Bool'"),
+        }
+    }
+
+    pub fn as_f64(&self) -> f64 {
+        match self {
+            Value::Number(n) => *n,
+            _ => panic!("Value is not a 'Number'"),
+        }
+    }
+
+    pub fn evaluate_binary_operation(&self, op: &TokenKind, rhs: &Self) -> Self {
+        use Value::*;
+
+        match op {
+            TokenKind::BangEqual    => Bool(self != rhs),
+            TokenKind::EqualEqual   => Bool(self == rhs),
+            TokenKind::Greater      => Bool(self.as_f64() > rhs.as_f64()),
+            TokenKind::GreaterEqual => Bool(self.as_f64() >= rhs.as_f64()),
+            TokenKind::Less         => Bool(self.as_f64() <  rhs.as_f64()),
+            TokenKind::LessEqual    => Bool(self.as_f64() <= rhs.as_f64()),
+            TokenKind::Minus        => Number(self.as_f64() - rhs.as_f64()),
+            TokenKind::Plus => match (self, rhs) {
+                (Number(n1), Number(n2)) => Number(n1 + n2),
+                (String(s1), String(s2)) => String(s1.clone() + &s2),
+                (_, _) => panic!("Operands must be two numbers or two strings."),
+            },
+            TokenKind::Slash => match (self, rhs) {
+                (Number(n1), Number(n2)) => Number(n1 / n2),
+                (_, _) => panic!("Operands must be two numbers."),
+            },
+            TokenKind::Star => match (self, rhs) {
+                (Number(n1), Number(n2)) => Number(n1 * n2),
+                (_, _) => panic!("Operands must be two numbers."),
+            },
+            _ => panic!("Unexpected operator in binary operation."),
         }
     }
 }

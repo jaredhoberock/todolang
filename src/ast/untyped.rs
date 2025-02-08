@@ -16,10 +16,15 @@ pub struct Literal {
 
 #[derive(Debug)]
 pub enum Expression {
+    Binary {
+        lhs: Box<Self>,
+        op: Token,
+        rhs: Box<Self>,
+    },
     Block {
         lbrace: Token,
         statements: Vec<Statement>,
-        expr: Option<Box<Self>>,
+        last_expr: Option<Box<Self>>,
         rbrace: Token,
     },
     Call {
@@ -28,6 +33,10 @@ pub enum Expression {
         closing_paren: Token,
     },
     Literal(Literal),
+    Unary {
+        op: Token,
+        operand: Box<Self>,
+    },
     Variable {
         name: Token,
     },
@@ -36,6 +45,10 @@ pub enum Expression {
 impl Expression {
     pub fn source_span(&self) -> SourceSpan {
         match &self {
+            Self::Binary{ lhs, rhs, .. } => {
+                lhs.source_span()
+                    .merge(&rhs.source_span())
+            },
             Self::Block{ lbrace, rbrace, .. } => {
                 lbrace.span.merge(&rbrace.span)
             },
@@ -45,6 +58,9 @@ impl Expression {
             },
             Self::Literal(lit) => {
                 lit.span.clone()
+            },
+            Self::Unary{ op, operand } => {
+                op.span.merge(&operand.source_span())
             },
             Self::Variable{ name } => {
                 name.span.clone()

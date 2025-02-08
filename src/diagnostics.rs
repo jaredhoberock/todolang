@@ -7,6 +7,7 @@ use crate::analysis::Error as AnalysisError;
 use crate::parser::ParseError;
 use crate::parser2::ParseError as ParseError2;
 use crate::interpreter::Error as InterpreterError;
+use crate::interpreter2::Error as InterpreterError2;
 use crate::semantic_analyzer::Error as SemanticError;
 use crate::token::TokenKind;
 
@@ -113,6 +114,21 @@ pub fn format_diagnostic_for_analysis_error(error: &AnalysisError, filename: &st
     if let Some(loc) = error.location() {
         diagnostic.labels.push(Label::primary((), loc.as_range()));
     }
+
+    let mut writer = Buffer::ansi();
+    emit(&mut writer, &Config::default(), &file, &diagnostic)
+        .expect("failed to write diagnostic");
+
+    String::from_utf8(writer.into_inner())
+        .expect("diagnostic output was not valid UTF-8")
+}
+
+
+pub fn format_diagnostic_for_interpreter_error2(error: &InterpreterError2, filename: &str, source: &str) -> String {
+    let file = SimpleFile::new(filename, source);
+
+    let mut diagnostic = Diagnostic::error().with_message(error.to_string());
+    diagnostic.labels.push(Label::primary((), error.location.as_range()));
 
     let mut writer = Buffer::ansi();
     emit(&mut writer, &Config::default(), &file, &diagnostic)

@@ -19,9 +19,16 @@ pub struct Literal {
 
 #[derive(Debug)]
 pub enum Expression {
+    Binary {
+        lhs: Box<Self>,
+        op: Token,
+        rhs: Box<Self>,
+        type_: Type,
+        location: SourceSpan,
+    },
     Block {
         statements: Vec<Statement>,
-        expr: Option<Box<Self>>,
+        last_expr: Option<Box<Self>>,
         type_: Type,
         location: SourceSpan,
     },
@@ -32,6 +39,12 @@ pub enum Expression {
         location: SourceSpan,
     },
     Literal(Literal),
+    Unary {
+        op: Token,
+        operand: Box<Self>,
+        type_: Type,
+        location: SourceSpan,
+    },
     Variable {
         name: Token,
         decl: Rc<Declaration>,
@@ -43,9 +56,11 @@ pub enum Expression {
 impl Expression {
     pub fn type_(&self) -> Type {
         match self {
+            Self::Binary{ type_, .. } => type_.clone(),
             Self::Block { type_, .. } => type_.clone(),
             Self::Call{ type_, .. } => type_.clone(),
             Self::Literal(lit) => lit.type_.clone(),
+            Self::Unary {type_, .. } => type_.clone(),
             Self::Variable{ decl, .. } => decl.type_(),
         }
     }

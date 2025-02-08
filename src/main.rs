@@ -21,7 +21,8 @@ fn interpret2(filename: &str, source: &str) -> Result<(), String> {
     let typed_module = analyze_module(&untyped_module)
         .map_err(|e| format_diagnostic_for_analysis_error(&e, &filename, &source))?;
     let mut interp = Interpreter2::new();
-    interp.interpret_module(&typed_module).map_err(|_| "interpreter error".to_string())
+    interp.interpret_module(&typed_module)
+        .map_err(|e| format_diagnostic_for_interpreter_error2(&e, &filename, &source))
 }
 
 fn interpret_from_file2(filename: &str) -> Result<(),String> {

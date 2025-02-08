@@ -1,10 +1,32 @@
 use crate::ast::typed::*;
 use crate::source_location::SourceSpan;
-use crate::token::Token;
+use crate::token::{Token, TokenKind};
 use crate::types::Type;
 use super::environment::*;
 use std::cell::RefCell;
 use std::rc::Rc;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+#[error("{message}")]
+pub struct Error {
+    pub message: String,
+    pub location: SourceSpan,
+}
+
+trait ErrorLocation<T> {
+    fn err_loc(self, location: &SourceSpan) -> Result<T,Error>;
+}
+
+impl<T, S: Into<String>> ErrorLocation<T> for Result<T,S> {
+    fn err_loc(self, location: &SourceSpan) -> Result<T,Error> {
+        self.map_err(|s| Error{ 
+            message: s.into(), 
+            location: location.clone() 
+        })
+    }
+}
+
 
 pub struct Interpreter {
     env: Rc<RefCell<Environment>>,
@@ -15,14 +37,14 @@ impl Interpreter {
         Self { env: Environment::new_shared_global() }
     }
 
-    pub fn interpret_module(&mut self, module: &Module) -> Result<(),String> {
+    pub fn interpret_module(&mut self, module: &Module) -> Result<(),Error> {
         for stmt in &module.statements {
             self.interpret_statement(stmt)?;
         }
         Ok(())
     }
 
-    fn interpret_statement(&mut self, stmt: &Statement) -> Result<(), String> {
+    fn interpret_statement(&mut self, stmt: &Statement) -> Result<(),Error> {
         match stmt {
             Statement::Assert { expr, location, .. } => {
                 self.interpret_assert_statement(&expr, &location)
@@ -42,20 +64,21 @@ impl Interpreter {
         }
     }
 
-    fn interpret_assert_statement(&mut self, expr: &Expression, _loc: &SourceSpan) -> Result<(), String> {
+    fn interpret_assert_statement(&mut self, expr: &Expression, loc: &SourceSpan) -> Result<(),Error> {
         let val = self.interpret_expression(&expr)?;
         if !val.as_bool() {
-            return Err("assert failed".into())
+            return Err("assert failed").err_loc(&loc)
         }
         Ok(())
     }
 
-    fn interpret_declaration(&mut self, decl: Rc<Declaration>) -> Result<(), String> {
+    fn interpret_declaration(&mut self, decl: Rc<Declaration>) -> Result<(),Error> {
         match &*decl {
-            Declaration::Variable{ initializer, .. } => {
+            Declaration::Variable{ initializer, location, .. } => {
                 self.interpret_variable_declaration(
                     decl.clone(),
-                    &initializer
+                    &initializer,
+                    &location,
                 )
             },
             _ => todo!("interpret_declaration")
@@ -65,34 +88,45 @@ impl Interpreter {
     fn interpret_variable_declaration(
         &mut self,
         decl: Rc<Declaration>, 
-        initializer: &Expression
-    ) -> Result<(), String> {
+        initializer: &Expression,
+        location: &SourceSpan,
+    ) -> Result<(), Error> {
         let value = self.interpret_expression(initializer)?;
         match &*decl {
             Declaration::Variable { name, .. } => {
                 self.env.define(name.lexeme.clone(), value)
+                    .err_loc(&location)
             },
             _ => panic!("Internal error: expected variable declaration"),
         }
     }
 
-    fn interpret_expression_statement(&mut self, expr: &Expression, _type: &Type, _location: &SourceSpan) -> Result<(), String> {
-        let expr = self.interpret_expression(&expr)?;
+    fn interpret_expression_statement(&mut self, expr: &Expression, _type: &Type, _location: &SourceSpan) -> Result<(),Error> {
+        self.interpret_expression(&expr)?;
         Ok(())
     }
 
-    fn interpret_print_statement(&mut self, expr: &Expression, _location: &SourceSpan) -> Result<(), String> {
+    fn interpret_print_statement(&mut self, expr: &Expression, _location: &SourceSpan) -> Result<(),Error> {
         let val = self.interpret_expression(&expr)?;
         println!("{}", val);
         Ok(())
     }
 
-    fn interpret_expression(&mut self, expr: &Expression) -> Result<Value, String> {
+    fn interpret_expression(&mut self, expr: &Expression) -> Result<Value,Error> {
         match expr {
-            Expression::Block{ statements, expr, type_, location } => {
+            Expression::Binary{ lhs, op, rhs, type_, location } => {
+                self.interpret_binary_expression(
+                    &lhs,
+                    &op,
+                    &rhs,
+                    &type_,
+                    &location
+                )
+            },
+            Expression::Block{ statements, last_expr, type_, location } => {
                 self.interpret_block_expression(
                     &statements,
-                    &expr,
+                    &last_expr,
                     &type_,
                     &location
                 )
@@ -106,6 +140,14 @@ impl Interpreter {
                 )
             },
             Expression::Literal(lit) => self.interpret_literal_expression(&lit),
+            Expression::Unary{ op, operand, type_, location } => {
+                self.interpret_unary_expression(
+                    &op,
+                    &operand,
+                    &type_,
+                    &location
+                )
+            },
             Expression::Variable{ name, decl, location, scope_distance } => {
                 self.interpret_variable_expression(
                     &name,
@@ -117,13 +159,37 @@ impl Interpreter {
         }
     }
 
+    fn interpret_binary_expression(
+        &mut self,
+        lhs: &Box<Expression>,
+        op: &Token,
+        rhs: &Box<Expression>,
+        _type_: &Type,
+        _location: &SourceSpan
+
+    ) -> Result<Value,Error> {
+        let lhs_value = self.interpret_expression(&*lhs)?;
+        match op.kind {
+            // logical operations need to short circuit
+            TokenKind::Or if lhs_value.as_bool() => Ok(lhs_value),
+            TokenKind::And if !lhs_value.as_bool() => Ok(lhs_value),
+            TokenKind::Or | TokenKind::And => self.interpret_expression(&*rhs),
+
+            // other binary operations
+            _ => {
+              let rhs_value = self.interpret_expression(&*rhs)?;
+              Ok(lhs_value.evaluate_binary_operation(&op.kind, &rhs_value))
+            }
+        }
+    }
+
     fn interpret_block_expression(
         &mut self,
         _statements: &Vec<Statement>,
-        _expr: &Option<Box<Expression>>,
+        _last_expr: &Option<Box<Expression>>,
         _type_: &Type,
         _location: &SourceSpan
-    ) -> Result<Value, String> {
+    ) -> Result<Value,Error> {
         todo!("interpret_block_expression")
     }
 
@@ -132,11 +198,11 @@ impl Interpreter {
         _callee: &Expression, 
         _arguments: &Vec<Expression>, 
         _type_: &Type,
-        _location: &SourceSpan) -> Result<Value, String> {
+        _location: &SourceSpan) -> Result<Value,Error> {
         todo!("interpret_call_expression")
     }
 
-    fn interpret_literal_expression(&mut self, literal: &Literal) -> Result<Value, String> {
+    fn interpret_literal_expression(&mut self, literal: &Literal) -> Result<Value,Error> {
         Ok(match &literal.value {
             LiteralValue::Bool(b)   => Value::Bool(*b),
             LiteralValue::Number(n) => Value::Number(*n),
@@ -144,13 +210,23 @@ impl Interpreter {
         })
     }
 
+    fn interpret_unary_expression(&mut self, op: &Token, operand: &Box<Expression>, _type_: &Type, location: &SourceSpan) -> Result<Value,Error> {
+        let operand_value = self.interpret_expression(&*operand)?;
+        match op.kind {
+            TokenKind::Bang  => Ok(Value::Bool(!operand_value.as_bool())),
+            TokenKind::Minus => Ok(Value::Number(-operand_value.as_f64())),
+            _ => panic!("Internal error: unknown operator in interpret_unary_expression"),
+        }
+    }
+
     fn interpret_variable_expression(
         &mut self,
         name: &Token, 
         _decl: &Rc<Declaration>, 
         scope_distance: usize, 
-        _location: &SourceSpan
-    ) -> Result<Value, String> {
+        location: &SourceSpan
+    ) -> Result<Value,Error> {
         self.env.get_at(scope_distance, &name.lexeme)
+            .err_loc(&location)
     }
 }
