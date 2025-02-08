@@ -5,10 +5,10 @@ use crate::ast::typed::Expression as TypedExpression;
 use crate::ast::typed::LiteralValue as TypedLiteralValue;
 use crate::ast::typed::Literal as TypedLiteral;
 use crate::ast::typed::Statement as TypedStatement;
-use crate::token::{Token, TokenKind};
 use crate::source_location::SourceSpan;
-use crate::types::Error2 as TypeError;
-use crate::types::{Type, TypeEnvironment2};
+use crate::token::{Token, TokenKind};
+use crate::types::Error as TypeError;
+use crate::types::{Type, TypeEnvironment};
 use super::environment::Environment;
 use super::environment::Error as NameError;
 use std::rc::Rc;
@@ -78,12 +78,12 @@ impl<T> MismatchLocation<T> for Result<T,TypeError> {
 
 struct SemanticAnalyzer {
     env: Environment,
-    type_env: TypeEnvironment2,
+    type_env: TypeEnvironment,
 }
 
 impl SemanticAnalyzer {
     pub fn new() -> Self {
-        Self { env: Environment::new(), type_env: TypeEnvironment2::new(), }
+        Self { env: Environment::new(), type_env: TypeEnvironment::new(), }
     }
 
     // this wraps the invocation of f(self) in a new scope

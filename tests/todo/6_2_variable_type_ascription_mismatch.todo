@@ -1,2 +1,0 @@
-var x: String = 13;
-print x;

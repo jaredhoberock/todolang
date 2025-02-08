@@ -1,6 +1,0 @@
-fun f() {
-}
-
-assert nil == f();
-
-print "OK";

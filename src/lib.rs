@@ -1,17 +1,9 @@
 pub mod analysis;
-mod ast;
-pub mod declaration_environment;
+pub mod ast;
 pub mod diagnostics;
 pub mod interpreter;
-pub mod interpreter2;
 pub mod lexer;
-mod name_resolver;
 pub mod parser;
-pub mod parser2;
-pub mod resolver;
-pub mod semantic_analyzer;
 pub mod source_location;
-pub mod symbol_table;
-pub mod syntax;
 pub mod token;
 pub mod types;

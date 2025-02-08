@@ -1,3 +1,0 @@
-var x: String = "Hello";
-x = 13;
-print x;

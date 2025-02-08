@@ -6,8 +6,8 @@ use std::process::Command;
 /// This function tests the interpreter by running it on a source file and comparing the output
 /// to the expected output in the corresponding `.expected` file.
 fn test_interpreter(source_file: &Path, expected_output_file: &Path) {
-    let expected_output =
-        fs::read_to_string(expected_output_file).expect("Failed to read expected output file");
+    let expected_output = fs::read_to_string(expected_output_file)
+        .expect(&format!("Failed to read expected output file {}", expected_output_file.display()));
 
     let binary_name = env!("CARGO_PKG_NAME");
     let interpreter_path = format!("target/debug/{binary_name}");

@@ -1,3 +1,0 @@
-var x: Number = 13;
-x = 7;
-print x;

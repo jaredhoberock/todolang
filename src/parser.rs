@@ -1,4 +1,4 @@
-use crate::syntax::*;
+use crate::ast::untyped::*;
 use crate::token::*;
 
 extern crate restore_macros;
@@ -95,11 +95,6 @@ impl<'a> Parser<'a> {
     }
 
     #[restore_state_on_err]
-    fn underscore(&mut self) -> Result<Token, ParseError> {
-        self.token(TokenKind::Underscore)
-    }
-
-    #[restore_state_on_err]
     fn either_token(&mut self, kind0: TokenKind, kind1: TokenKind) -> Result<Token, ParseError> {
         let tok0 = self.token(kind0);
         if tok0.is_ok() {
@@ -148,15 +143,6 @@ impl<'a> Parser<'a> {
         self.token(TokenKind::Identifier)
     }
 
-    fn variable(&mut self) -> Result<Variable, ParseError> {
-        self.identifier().map(|name| Variable { name })
-    }
-
-    fn this(&mut self) -> Result<ThisExpression, ParseError> {
-        self.token(TokenKind::This)
-            .map(|keyword| ThisExpression { keyword })
-    }
-
     fn number_literal(&mut self) -> Result<Literal, ParseError> {
         self.token(TokenKind::Number)
             .map(|token| {
@@ -197,27 +183,7 @@ impl<'a> Parser<'a> {
             })
     }
 
-    fn nil_literal(&mut self) -> Result<Literal, ParseError> {
-        self.token(TokenKind::Nil)
-            .map(|token| {
-                Literal {
-                    value: LiteralValue::Nil,
-                    location: token.location
-                }
-            })
-    }
-
-    // grouping_expression := '(' expression ')'
-    #[restore_state_on_err]
-    fn grouping_expression(&mut self) -> Result<GroupingExpression, ParseError> {
-        Ok(GroupingExpression {
-            lparen: self.token(TokenKind::LeftParen)?,
-            expr: Box::new(self.expression()?),
-            rparen: self.token(TokenKind::RightParen)?,
-        })
-    }
-
-    // literal := number_literal | string_literal | 'true' | 'false' | 'nil'
+    // literal := number_literal | string_literal | true_literal | false_literal
     #[restore_state_on_err]
     fn literal(&mut self) -> Result<Literal, ParseError> {
         let number = self.number_literal();
@@ -240,135 +206,94 @@ impl<'a> Parser<'a> {
             return false_;
         }
 
-        let nil = self.nil_literal();
-        if nil.is_ok() {
-            return nil;
-        }
-
         let errors = vec![
             number.unwrap_err(),
             string.unwrap_err(),
             true_.unwrap_err(),
             false_.unwrap_err(),
-            nil.unwrap_err(),
         ];
 
         Err(ParseError::combine(errors))
     }
 
     // literal_expression := literal
-    fn literal_expression(&mut self) -> Result<LiteralExpression, ParseError> {
-         self.literal().map(LiteralExpression)
+    fn literal_expression(&mut self) -> Result<Expression, ParseError> {
+         self.literal().map(Expression::Literal)
     }
 
-    // match_arm := pattern '=>' expression
+    // block_expression := "{" (statement)* expression? "}"
     #[restore_state_on_err]
-    fn match_arm(&mut self) -> Result<MatchArm, ParseError> {
-        let pattern = self.pattern()?;
-        let _arrow = self.token(TokenKind::EqualGreater)?;
-        let expr = self.expression()?;
-        Ok(MatchArm { pattern, expr })
-    }
+    fn block_expression(&mut self) -> Result<Expression, ParseError> {
+        let lbrace = self
+            .token(TokenKind::LeftBrace)
+            .map_err(ParseError::format_message("{} before block"))?;
 
-    // match_arms := match_arm (',' match_arms | ',')?
-    #[restore_state_on_err]
-    fn match_arms(&mut self) -> Result<Vec<MatchArm>, ParseError> {
-        // first parse one arm
-        let mut arms = vec![self.match_arm()?];
+        let mut statements = Vec::new();
+        let mut last_expr = None;
 
-        // If we see a comma, try to parse more arms
-        if self.comma().is_ok() {
-            if let Ok(more_arms) = self.match_arms() {
-                arms.extend(more_arms);
+        // loop until we encounter the closing brace
+        let rbrace = loop {
+            if let Ok(rbrace) = self.token(TokenKind::RightBrace) {
+                break rbrace;
             }
-        }
 
-        Ok(arms)
+            // try to parse a statement
+            let maybe_stmt = self.statement();
+            if let Ok(stmt) = maybe_stmt {
+                statements.push(stmt);
+                continue;
+            }
+
+            // try to parse an expression
+            let maybe_expr = self.expression();
+            if let Ok(e) = maybe_expr {
+                last_expr = Some(Box::new(e));
+                break self.token(TokenKind::RightBrace)
+                    .map_err(ParseError::format_message("{} after block"))?;
+            }
+
+            // combine errors and return
+            let errors = vec![
+                maybe_stmt.unwrap_err(),
+                maybe_expr.unwrap_err(),
+            ];
+            return Err(ParseError::combine(errors))
+        };
+
+        Ok(Expression::Block{
+            lbrace, 
+            statements,
+            last_expr, 
+            rbrace,
+        })
     }
 
-    // match_expression := "match" expression "{" match_arms "}"
-    #[restore_state_on_err]
-    fn match_expression(&mut self) -> Result<MatchExpression, ParseError> {
-        let keyword = self.token(TokenKind::Match)?;
-        let scrutinee = Box::new(self.expression()?);
-        let _lbrace = self.token(TokenKind::LeftBrace)?;
-        let arms = self.match_arms()?;
-        let _rbrace = self.token(TokenKind::RightBrace)?;
-        Ok(MatchExpression { keyword, scrutinee, arms })
+    // variable_expression := identifier
+    fn variable_expression(&mut self) -> Result<Expression, ParseError> {
+        self.identifier().map(|name| Expression::Variable { name })
     }
 
-    // super_expression := "super" "." identifier
-    #[restore_state_on_err]
-    fn super_expression(&mut self) -> Result<SuperExpression, ParseError> {
-        let keyword = self.token(TokenKind::Super)?;
-        let _dot = self
-            .token(TokenKind::Dot)
-            .map_err(ParseError::format_message("{} after 'super'"))?;
-        let method = self.identifier().map_err(ParseError::format_message(
-            "Expected superclass method name",
-        ))?;
-        Ok(SuperExpression { keyword, method })
-    }
-
-    // pattern := "_" | literal_pattern
-    #[restore_state_on_err]
-    fn pattern(&mut self) -> Result<Pattern, ParseError> {
-        let underscore = self.underscore();
-        if underscore.is_ok() {
-            return Ok(Pattern::Underscore);
-        }
-
-        let literal = self.literal_pattern().map(Pattern::Literal);
-        if literal.is_ok() {
-            return literal;
-        }
-
-        let errors = vec![
-            underscore.unwrap_err(),
-            literal.unwrap_err(),
-        ];
-
-        Err(ParseError::combine(errors))
-    }
-
-    // literal_pattern := literal
-    fn literal_pattern(&mut self) -> Result<LiteralPattern, ParseError> {
-        self.literal().map(LiteralPattern)
-    }
-
-    // primary_expression := literal_expression | grouping_expression | super_expression | this | variable
+    // primary_expression := literal_expression | block_expression | variable
     #[restore_state_on_err]
     fn primary_expression(&mut self) -> Result<Expression, ParseError> {
         let literal = self.literal_expression();
         if literal.is_ok() {
-            return literal.map(Expression::Literal);
+            return literal;
         }
 
-        let grouping = self.grouping_expression();
-        if grouping.is_ok() {
-            return grouping.map(Expression::Grouping);
+        let block = self.block_expression();
+        if block.is_ok() {
+            return block;
         }
 
-        let super_ = self.super_expression();
-        if super_.is_ok() {
-            return super_.map(Expression::Super);
-        }
-
-        let this = self.this();
-        if this.is_ok() {
-            return this.map(Expression::This);
-        }
-
-        let var = self.variable();
+        let var = self.variable_expression();
         if var.is_ok() {
-            return var.map(Expression::Variable);
+            return var;
         }
 
         let errors = vec![
             literal.unwrap_err(),
-            grouping.unwrap_err(),
-            super_.unwrap_err(),
-            this.unwrap_err(),
+            block.unwrap_err(),
             var.unwrap_err(),
         ];
 
@@ -421,25 +346,15 @@ impl<'a> Parser<'a> {
             };
 
             result = match tok.kind {
-                // "." identifier
-                TokenKind::Dot => {
-                    let get_expr = GetExpression {
-                        object: Box::new(result),
-                        name: self.identifier()?,
-                    };
-                    Expression::Get(get_expr)
-                }
-
                 TokenKind::LeftParen => {
                     // look for a closing ')'
                     match self.token(TokenKind::RightParen) {
                         Ok(closing_paren) => {
-                            let call_expr = CallExpression {
-                                callee: Box::new(result),
+                            Expression::Call { 
+                                callee: Box::new(result), 
                                 arguments: Vec::new(),
                                 closing_paren,
-                            };
-                            Expression::Call(call_expr)
+                            }
                         }
                         _ => {
                             let arguments = self
@@ -448,12 +363,11 @@ impl<'a> Parser<'a> {
                             let closing_paren = self
                                 .token(TokenKind::RightParen)
                                 .map_err(ParseError::format_message("{} after arguments"))?;
-                            let call_expr = CallExpression {
+                            Expression::Call {
                                 callee: Box::new(result),
-                                arguments,
+                                arguments, 
                                 closing_paren,
-                            };
-                            Expression::Call(call_expr)
+                            }
                         }
                     }
                 }
@@ -465,20 +379,6 @@ impl<'a> Parser<'a> {
         Ok(result)
     }
 
-    // unary := ( "!" | "-" ) | call
-    #[restore_state_on_err]
-    fn unary(&mut self) -> Result<Expression, ParseError> {
-        if let Ok(op) = self.either_token(TokenKind::Bang, TokenKind::Minus) {
-            let expr = UnaryExpression {
-                op: op,
-                expr: Box::new(self.unary()?),
-            };
-            Ok(Expression::Unary(expr))
-        } else {
-            self.call()
-        }
-    }
-
     // factor := unary ( ( "/" | "*" ) ) unary )*
     #[restore_state_on_err]
     fn factor(&mut self) -> Result<Expression, ParseError> {
@@ -486,13 +386,13 @@ impl<'a> Parser<'a> {
 
         while let Ok(op) = self.either_token(TokenKind::Slash, TokenKind::Star) {
             // parse the rhs
-            let right_expr = self.unary()?;
+            let rhs = self.unary()?;
 
-            result = Expression::Binary(BinaryExpression {
-                left_expr: Box::new(result),
-                op,
-                right_expr: Box::new(right_expr),
-            })
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op: BinOp::from_token(op),
+                rhs: Box::new(rhs),
+            }
         }
 
         Ok(result)
@@ -505,13 +405,13 @@ impl<'a> Parser<'a> {
 
         while let Ok(op) = self.either_token(TokenKind::Minus, TokenKind::Plus) {
             // parse the rhs
-            let right_expr = self.factor()?;
+            let rhs = self.factor()?;
 
-            result = Expression::Binary(BinaryExpression {
-                left_expr: Box::new(result),
-                op,
-                right_expr: Box::new(right_expr),
-            })
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op: BinOp::from_token(op),
+                rhs: Box::new(rhs),
+            }
         }
 
         Ok(result)
@@ -523,13 +423,13 @@ impl<'a> Parser<'a> {
 
         while let Ok(op) = self.any_comparison_operator() {
             // parse the rhs
-            let right_expr = self.term()?;
+            let rhs = self.term()?;
 
-            result = Expression::Binary(BinaryExpression {
-                left_expr: Box::new(result),
-                op,
-                right_expr: Box::new(right_expr),
-            })
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op: BinOp::from_token(op),
+                rhs: Box::new(rhs),
+            }
         }
 
         Ok(result)
@@ -542,16 +442,29 @@ impl<'a> Parser<'a> {
 
         while let Ok(op) = self.either_token(TokenKind::BangEqual, TokenKind::EqualEqual) {
             // parse the rhs
-            let right_expr = self.comparison()?;
+            let rhs = self.comparison()?;
 
-            result = Expression::Binary(BinaryExpression {
-                left_expr: Box::new(result),
-                op,
-                right_expr: Box::new(right_expr),
-            })
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op: BinOp::from_token(op),
+                rhs: Box::new(rhs),
+            }
         }
 
         Ok(result)
+    }
+
+    // unary := ( "|" | "-" ) | call
+    #[restore_state_on_err]
+    fn unary(&mut self) -> Result<Expression, ParseError> {
+        if let Ok(op) = self.either_token(TokenKind::Bang, TokenKind::Minus) {
+            Ok(Expression::Unary {
+                op,
+                operand: Box::new(self.unary()?),
+            })
+        } else {
+            self.call()
+        }
     }
 
     // logical_and := equality ( "and" equality)*
@@ -561,13 +474,13 @@ impl<'a> Parser<'a> {
 
         while let Ok(op) = self.token(TokenKind::And) {
             // parse the rhs
-            let right_expr = self.equality()?;
+            let rhs = self.equality()?;
 
-            result = Expression::Logical(LogicalExpression {
-                left_expr: Box::new(result),
-                op,
-                right_expr: Box::new(right_expr),
-            })
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op: BinOp::from_token(op),
+                rhs: Box::new(rhs),
+            }
         }
 
         Ok(result)
@@ -580,90 +493,39 @@ impl<'a> Parser<'a> {
 
         while let Ok(op) = self.token(TokenKind::Or) {
             // parse the rhs
-            let right_expr = self.logical_and()?;
+            let rhs = self.logical_and()?;
 
-            result = Expression::Logical(LogicalExpression {
-                left_expr: Box::new(result),
-                op,
-                right_expr: Box::new(right_expr),
-            })
+            result = Expression::Binary {
+                lhs: Box::new(result),
+                op: BinOp::from_token(op),
+                rhs: Box::new(rhs),
+            }
         }
 
         Ok(result)
     }
 
-    // assignment := ( call "." )? identifier "=" assignment |
-    //               logical_or
+    // expression := logical_or
     #[restore_state_on_err]
-    fn assignment(&mut self) -> Result<Expression, ParseError> {
-        // parse the lhs before a possible equal sign
-        let result = self.logical_or()?;
-
-        // if we find a "=" next...
-        match self.token(TokenKind::Equal) {
-            Ok(_) => {
-                // parse the rhs
-                let right_expr = self.assignment()?;
-
-                // check what we found on the left of the "="...
-                match result {
-                    // if we found a variable, transform it into an assignment
-                    Expression::Variable(var) => Ok(Expression::Assignment(AssignmentExpression {
-                        var,
-                        expr: Box::new(right_expr),
-                    })),
-                    // if we found a get expression, transform it into a set expression
-                    Expression::Get(get_expr) => Ok(Expression::Set(SetExpression {
-                        object: get_expr.object,
-                        name: get_expr.name,
-                        value: Box::new(right_expr),
-                    })),
-                    // anything else is an error
-                    _ => Err(ParseError::new(
-                        "Invalid assignment target".to_string(),
-                        self.remaining,
-                    )),
-                } // end match result
-            }
-            _ => Ok(result),
-        }
-    }
-
-    // expression := assignment | match_expression
     fn expression(&mut self) -> Result<Expression, ParseError> {
-        let assignment_expr = self.assignment();
-        if assignment_expr.is_ok() {
-            return assignment_expr
-        }
-
-        let match_expr = self.match_expression();
-        if match_expr.is_ok() {
-            return match_expr.map(Expression::Match)
-        }
-
-        let errors = vec![
-            assignment_expr.unwrap_err(),
-            match_expr.unwrap_err(),
-        ];
-
-        Err(ParseError::combine(errors))
+        self.logical_or()
     }
 
     // type_expression := identifier
     #[restore_state_on_err]
     fn type_expression(&mut self) -> Result<TypeExpression, ParseError> {
-        Ok(TypeExpression{ identifier: self.identifier()?})
+        Ok(TypeExpression{ identifier: self.identifier()? })
     }
 
-    // parameter := identifier
+    // parameter := identifier type_ascription
     #[restore_state_on_err]
-    fn parameter(&mut self) -> Result<ParameterDeclaration, ParseError> {
-        Ok(ParameterDeclaration { name: self.identifier()?})
+    fn parameter(&mut self) -> Result<Parameter, ParseError> {
+        Ok(Parameter { name: self.identifier()?, ascription: self.type_ascription()? })
     }
 
     // parameters := parameter ( "," parameter )*
     #[restore_state_on_err]
-    fn parameters(&mut self) -> Result<Vec<ParameterDeclaration>, ParseError> {
+    fn parameters(&mut self) -> Result<Vec<Parameter>, ParseError> {
         let mut params = vec![self.parameter()?];
 
         while self.token(TokenKind::Comma).is_ok() {
@@ -676,9 +538,9 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    // function_declaration := "fun" identifier "(" parameters? ")" block_statement
+    // function_declaration := "fun" identifier "(" parameters? ")" "->" type_expression expression
     #[restore_state_on_err]
-    fn function_declaration(&mut self) -> Result<FunctionDeclaration, ParseError> {
+    fn function_declaration(&mut self) -> Result<Declaration, ParseError> {
         let _fun = self
             .token(TokenKind::Fun)
             .map_err(ParseError::format_message("{} before function name"))?;
@@ -691,48 +553,16 @@ impl<'a> Parser<'a> {
         }
 
         let _rparen = self.token(TokenKind::RightParen)?;
-        let body = self.block_statement()?;
+        let _arrow = self.token(TokenKind::Arrow)?;
+        let return_type = self.type_expression()?;
+        let body = self.expression()?;
 
-        Ok(FunctionDeclaration {
+        Ok(Declaration::Function {
             name,
             parameters,
+            return_type,
             body,
         })
-    }
-
-    // class_declaration := "class" identifier ( "<" identifier )? "{" function_declaration* "}"
-    #[restore_state_on_err]
-    fn class_declaration(&mut self) -> Result<Declaration, ParseError> {
-        let _class = self
-            .token(TokenKind::Class)
-            .map_err(ParseError::format_message("{} before class name"))?;
-        let name = self.identifier()?;
-        let mut superclass = None;
-        if self.token(TokenKind::Less).is_ok() {
-            superclass = Some(self.identifier().map_err(ParseError::format_message(
-                "{} as superclass name after '<'",
-            ))?);
-        }
-        let _lbrace = self
-            .token(TokenKind::LeftBrace)
-            .map_err(ParseError::format_message("{} before class body"))?;
-
-        let mut methods = Vec::new();
-
-        let rbrace = loop {
-            if let Ok(rbrace) = self.token(TokenKind::RightBrace) {
-                break rbrace;
-            }
-
-            methods.push(self.function_declaration()?);
-        };
-
-        Ok(Declaration::Class(ClassDeclaration {
-            name,
-            superclass,
-            methods,
-            rbrace,
-        }))
     }
 
     // type_ascription := ":" type_expression
@@ -743,49 +573,41 @@ impl<'a> Parser<'a> {
         Ok(TypeAscription{ colon, expr })
     }
 
-    // variable_declaration := "var" identifier (type_ascription)? ( "=" expression )? ";"
+    // variable_declaration := "var" identifier type_ascription "=" expression ";"
     #[restore_state_on_err]
     fn variable_declaration(&mut self) -> Result<Declaration, ParseError> {
         let _var = self.token(TokenKind::Var)?;
         let name = self.identifier()?;
-        let ascription = self.type_ascription().ok();
+        let ascription = self.type_ascription()?;
+        let _equal = self.token(TokenKind::Equal)?;
+        let initializer = self.expression()?;
+        let semi = self.token(TokenKind::Semicolon)?;
 
-        let initializer = if self.token(TokenKind::Equal).is_ok() {
-            Some(self.expression()?)
-        } else {
-            None
-        };
-
-        let _semi = self.token(TokenKind::Semicolon)?;
-
-        Ok(Declaration::Variable(VariableDeclaration {
+        Ok(Declaration::Variable {
             name,
             ascription,
             initializer,
-        }))
+            semi,
+        })
     }
 
-    // declaration := class_declaration | function_declaration | variable_declaration
+    // declaration := function_declaration | variable_declaration
     #[restore_state_on_err]
-    fn declaration(&mut self) -> Result<Statement, ParseError> {
-        let class = self.class_declaration().map(Statement::Decl);
-        if class.is_ok() {
-            return class;
-        }
-
-        let fun = self
-            .function_declaration()
-            .map(|f| Statement::Decl(Declaration::Function(f)));
+    fn declaration(&mut self) -> Result<Declaration, ParseError> {
+        let fun = self.function_declaration();
         if fun.is_ok() {
             return fun;
         }
 
-        let var = self.variable_declaration().map(Statement::Decl);
+        let var = self.variable_declaration();
         if var.is_ok() {
             return var;
         }
 
-        let errors = vec![class.unwrap_err(), fun.unwrap_err(), var.unwrap_err()];
+        let errors = vec![
+            fun.unwrap_err(), 
+            var.unwrap_err()
+        ];
 
         Err(ParseError::combine(errors))
     }
@@ -795,139 +617,28 @@ impl<'a> Parser<'a> {
     fn assert_statement(&mut self) -> Result<Statement, ParseError> {
         let _assert = self.token(TokenKind::Assert)?;
         let expr = self.expression()?;
-        let _semi = self.token(TokenKind::Semicolon)?;
-        Ok(Statement::Assert(AssertStatement { expr }))
-    }
-
-    // block_statement := "{" ( statement )* "}"
-    #[restore_state_on_err]
-    fn block_statement(&mut self) -> Result<BlockStatement, ParseError> {
-        let lbrace = self
-            .token(TokenKind::LeftBrace)
-            .map_err(ParseError::format_message("{} before block"))?;
-
-        let mut statements = Vec::new();
-
-        let rbrace = loop {
-            if let Ok(rbrace) = self.token(TokenKind::RightBrace) {
-                break rbrace;
-            }
-
-            let stmt = self.statement()?;
-            statements.push(stmt);
-        };
-
-        Ok(BlockStatement { lbrace, statements, rbrace })
+        let semi = self.token(TokenKind::Semicolon)?;
+        Ok(Statement::Assert { expr, semi })
     }
 
     // expression_statement := expression ";"
     #[restore_state_on_err]
     fn expression_statement(&mut self) -> Result<Statement, ParseError> {
         let expr = self.expression()?;
-        let _semi = self.token(TokenKind::Semicolon)?;
-        return Ok(Statement::Expr(ExpressionStatement { expr }));
-    }
-
-    // for_statement := "for" "(" ( variable_declaration | expression_statement ) expression? ";" expression? ")" statement
-    #[restore_state_on_err]
-    fn for_statement(&mut self) -> Result<Statement, ParseError> {
-        let _for = self
-            .token(TokenKind::For)
-            .map_err(ParseError::format_message("{} before for loop"))?;
-        let _lparen = self
-            .token(TokenKind::LeftParen)
-            .map_err(ParseError::format_message("{} after 'for'"))?;
-
-        let mut initializer = None;
-        if let Ok(var_decl) = self.variable_declaration().map(Statement::Decl) {
-            initializer = Some(Box::new(var_decl));
-        } else if let Ok(expr_stmt) = self.expression_statement() {
-            initializer = Some(Box::new(expr_stmt));
-        }
-
-        let mut condition = None;
-        if let Ok(expr) = self.expression() {
-            condition = Some(expr);
-        }
-
-        let _semi = self
-            .token(TokenKind::Semicolon)
-            .map_err(ParseError::format_message("{} after for loop condition"))?;
-
-        let mut increment = None;
-        if let Ok(incr) = self.expression() {
-            increment = Some(incr);
-        }
-
-        let _rparen = self
-            .token(TokenKind::RightParen)
-            .map_err(ParseError::format_message("{} after for loop increment"))?;
-
-        let body = Box::new(self.statement()?);
-
-        Ok(Statement::For(ForStatement {
-            initializer,
-            condition,
-            increment,
-            body,
-        }))
-    }
-
-    // if_statement := "if" "(" expression ")" statement ( "else" statement )?
-    #[restore_state_on_err]
-    fn if_statement(&mut self) -> Result<Statement, ParseError> {
-        let _if = self.token(TokenKind::If)?;
-        let _lparen = self.token(TokenKind::LeftParen)?;
-        let condition = self.expression()?;
-        let _rparen = self.token(TokenKind::RightParen)?;
-        let then_branch = Box::new(self.statement()?);
-
-        let mut else_branch = None;
-        if let Ok(_else) = self.token(TokenKind::Else) {
-            else_branch = Some(Box::new(self.statement()?));
-        }
-
-        Ok(Statement::If(IfStatement {
-            condition,
-            then_branch,
-            else_branch,
-        }))
+        let semi = self.token(TokenKind::Semicolon)?;
+        Ok(Statement::Expr{ expr, semi })
     }
 
     // print_statement := "print" expression ";"
     #[restore_state_on_err]
     fn print_statement(&mut self) -> Result<Statement, ParseError> {
-        let _print = self.token(TokenKind::Print)?;
+        let print = self.token(TokenKind::Print)?;
         let expr = self.expression()?;
-        let _semi = self.token(TokenKind::Semicolon)?;
-        Ok(Statement::Print(PrintStatement { expr }))
+        let semi = self.token(TokenKind::Semicolon)?;
+        Ok(Statement::Print { print, expr, semi } )
     }
 
-    // return_statement := "return" expression? ";"
-    #[restore_state_on_err]
-    fn return_statement(&mut self) -> Result<Statement, ParseError> {
-        self.token(TokenKind::Return)?;
-        let mut expr = None;
-        if let Ok(e) = self.expression() {
-            expr = Some(e);
-        }
-        self.token(TokenKind::Semicolon)?;
-        Ok(Statement::Return(ReturnStatement { expr }))
-    }
-
-    // while_statement := "while" "(" condition ")" statement
-    #[restore_state_on_err]
-    fn while_statement(&mut self) -> Result<Statement, ParseError> {
-        let _while = self.token(TokenKind::While)?;
-        let _lparen = self.token(TokenKind::LeftParen)?;
-        let condition = self.expression()?;
-        let _rparen = self.token(TokenKind::RightParen)?;
-        let body = Box::new(self.statement()?);
-        Ok(Statement::While(WhileStatement { condition, body }))
-    }
-
-    // statement := assert_statement | block_statement | declaration | expression_statement |
-    //              for_statement | if_statement | print_statement | return_statement | while_statement
+    // statement := assert_statement | declaration | expression_statement | print_statement
     #[restore_state_on_err]
     fn statement(&mut self) -> Result<Statement, ParseError> {
         let assert = self.assert_statement();
@@ -935,29 +646,14 @@ impl<'a> Parser<'a> {
             return assert;
         }
 
-        let block = self.block_statement().map(Statement::Block);
-        if block.is_ok() {
-            return block;
-        }
-
-        let decl = self.declaration();
+        let decl = self.declaration().map(Statement::Decl);
         if decl.is_ok() {
             return decl;
         }
 
-        let expr_stmt = self.expression_statement();
-        if expr_stmt.is_ok() {
-            return expr_stmt;
-        }
-
-        let for_stmt = self.for_statement();
-        if for_stmt.is_ok() {
-            return for_stmt;
-        }
-
-        let if_stmt = self.if_statement();
-        if if_stmt.is_ok() {
-            return if_stmt;
+        let expr = self.expression_statement();
+        if expr.is_ok() {
+            return expr;
         }
 
         let print = self.print_statement();
@@ -965,32 +661,16 @@ impl<'a> Parser<'a> {
             return print;
         }
 
-        let ret = self.return_statement();
-        if ret.is_ok() {
-            return ret;
-        }
-
-        let while_ = self.while_statement();
-        if while_.is_ok() {
-            return while_;
-        }
-
         let errors = vec![
             assert.unwrap_err(),
-            block.unwrap_err(),
             decl.unwrap_err(),
-            expr_stmt.unwrap_err(),
-            for_stmt.unwrap_err(),
-            if_stmt.unwrap_err(),
+            expr.unwrap_err(),
             print.unwrap_err(),
-            ret.unwrap_err(),
-            while_.unwrap_err(),
         ];
 
         Err(ParseError::combine(errors))
     }
 
-    // XXX note that this allows return statements at global scope
     #[restore_state_on_err]
     fn global_statement_or_eof(&mut self) -> Result<Option<Statement>, ParseError> {
         if self.token(TokenKind::Eof).is_ok() {
@@ -999,22 +679,22 @@ impl<'a> Parser<'a> {
         Ok(Some(self.statement()?))
     }
 
-    // program := statement* EOF
+    // module := statement* EOF
     #[restore_state_on_err]
-    fn program(&mut self) -> Result<Program, ParseError> {
+    fn module(&mut self) -> Result<Module, ParseError> {
         let mut stmts = Vec::new();
 
         while let Some(stmt) = self.global_statement_or_eof()? {
-            stmts.push(Box::new(stmt));
+            stmts.push(stmt);
         }
 
-        Ok(Program { statements: stmts })
+        Ok(Module { statements: stmts })
     }
 }
 
-pub fn parse_program(tokens: &[Token]) -> Result<Program, ParseError> {
+pub fn parse_module(tokens: &[Token]) -> Result<Module, ParseError> {
     let mut parser = Parser::new(tokens);
-    parser.program()
+    parser.module()
 }
 
 pub fn parse_global_statement_or_eof(tokens: &[Token]) -> Result<Option<Statement>, ParseError> {
