@@ -21,10 +21,13 @@ pub enum Error {
     General(String, SourceSpan),
 
     #[error("{0}")]
-    Name(NameError, Option<SourceSpan>),
+    Name(NameError, SourceSpan),
 
     #[error("{0}")]
-    Type(TypeError, Option<SourceSpan>),
+    Type(TypeError, SourceSpan),
+
+    #[error("{error}")]
+    Mismatch{ error: TypeError, expected_at: SourceSpan, found_at: SourceSpan },
 }
 
 impl Error {
@@ -32,10 +35,11 @@ impl Error {
         Self::General(msg.into(), location.clone())
     }
 
-    pub fn location(&self) -> Option<SourceSpan> {
+    pub fn location(&self) -> SourceSpan {
         match self {
-            Error::General(_, loc) => Some(loc.clone()),
+            Error::General(_, loc) => loc.clone(),
             Error::Name(_, loc) => loc.clone(),
+            Error::Mismatch{found_at, ..} => found_at.clone(),
             Error::Type(_, loc) => loc.clone(),
         }
     }
@@ -48,13 +52,47 @@ trait ErrorLocation<T> {
 
 impl<T> ErrorLocation<T> for Result<T, NameError> {
     fn err_loc(self, location: &SourceSpan) -> Result<T, Error> {
-        self.map_err(|e| Error::Name(e, Some(location.clone())))
+        self.map_err(|e| Error::Name(e, location.clone()))
     }
 }
 
 impl<T> ErrorLocation<T> for Result<T, TypeError> {
     fn err_loc(self, location: &SourceSpan) -> Result<T, Error> {
-        self.map_err(|e| Error::Type(e, Some(location.clone())))
+        self.map_err(|e| Error::Type(e, location.clone()))
+    }
+}
+
+trait MismatchLocation<T> {
+    fn mismatch_loc(self, expected_at: SourceSpan, found_at: SourceSpan) -> Result<T, Error>;
+}
+
+impl<T> MismatchLocation<T> for Result<T,TypeError> {
+    fn mismatch_loc(self, expected_at: SourceSpan, found_at: SourceSpan) -> Result<T, Error> {
+        self.map_err(|e| Error::Mismatch {
+            error: e,
+            expected_at,
+            found_at,
+        })
+    }
+}
+
+fn function_body_return_type_location(expr: &Expression) -> SourceSpan {
+    match expr {
+        Expression::Block { statements, last_expr, .. } => {
+            if let Some(expr) = last_expr {
+                // If there's a trailing expression, use its location
+                return function_body_return_type_location(&*expr);
+            } else if !statements.is_empty() {
+                // Otherwise, return the span of the last statement
+                // XXX It would be better to just point at the semicolon,
+                //     but function declarations don't have a semicolon
+                statements.last().unwrap().source_span()
+            } else {
+                // If the block is empty, return the block's overall span
+                expr.source_span()
+            }
+        },
+        _ => expr.source_span(),
     }
 }
 
@@ -235,7 +273,8 @@ impl SemanticAnalyzer {
 
         let result_type = callee.type_().function_return_type();
         let call_type = self.type_env.get_function(argument_types, result_type);
-        self.type_env.unify(callee.type_(), call_type).err_loc(&location)?;
+        self.type_env.unify(callee.type_(), call_type)
+            .err_loc(&location)?;
 
         Ok(TypedExpression::Call {
             callee: Box::new(callee),
@@ -409,7 +448,8 @@ impl SemanticAnalyzer {
 
             // check return type against body
             slf.type_env.unify(return_type, body.type_())
-                .err_loc(&untyped_return_type.source_span())?;
+                .mismatch_loc(untyped_return_type.source_span(),
+                              function_body_return_type_location(&untyped_body))?;
 
             Ok(Rc::new(TypedDeclaration::Function {
                 name: name.clone(),

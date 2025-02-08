@@ -3,7 +3,6 @@ use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::Buffer;
 use codespan_reporting::term::{emit, Config};
 
-use crate::analysis::Error as AnalysisError;
 use crate::parser::ParseError;
 use crate::parser2::ParseError as ParseError2;
 use crate::interpreter::Error as InterpreterError;
@@ -105,24 +104,6 @@ pub fn format_diagnostic_for_interpreter_error(error: &InterpreterError, filenam
     String::from_utf8(writer.into_inner())
         .expect("diagnostic output was not valid UTF-8")
 }
-
-pub fn format_diagnostic_for_analysis_error(error: &AnalysisError, filename: &str, source: &str) -> String {
-    let file = SimpleFile::new(filename, source);
-
-    let mut diagnostic = Diagnostic::error().with_message(error.to_string());
-
-    if let Some(loc) = error.location() {
-        diagnostic.labels.push(Label::primary((), loc.as_range()));
-    }
-
-    let mut writer = Buffer::ansi();
-    emit(&mut writer, &Config::default(), &file, &diagnostic)
-        .expect("failed to write diagnostic");
-
-    String::from_utf8(writer.into_inner())
-        .expect("diagnostic output was not valid UTF-8")
-}
-
 
 pub fn format_diagnostic_for_interpreter_error2(error: &InterpreterError2, filename: &str, source: &str) -> String {
     let file = SimpleFile::new(filename, source);
