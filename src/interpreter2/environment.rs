@@ -6,12 +6,13 @@ use std::rc::Rc;
 
 #[derive(Clone, Debug)]
 pub struct Function {
-    decl: Rc<Declaration>
+    decl: Rc<Declaration>,
+    closure: Rc<RefCell<Environment>>,
 }
 
 impl Function {
-    fn new(decl: Rc<Declaration>) -> Self {
-        Function { decl }
+    pub fn new(decl: Rc<Declaration>, closure: Rc<RefCell<Environment>>) -> Self {
+        Function { decl, closure }
     }
 
     fn to_string(&self) -> String {
@@ -38,10 +39,6 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn unit() -> Self {
-        Self::Unit
-    }
-
     pub fn as_bool(&self) -> bool {
         match self {
             Value::Bool(b) => *b,
@@ -152,7 +149,7 @@ pub trait EnvironmentMethods {
     fn get_at(&self, distance: usize, name: &str) -> Result<Value, String>;
 
     /// Assign a value to a variable at the specified scope distance.
-    fn assign_at(&self, distance: usize, name: &str, value: Value) -> Result<(), String>;
+    fn _assign_at(&self, distance: usize, name: &str, value: Value) -> Result<(), String>;
 }
 
 impl EnvironmentMethods for Rc<RefCell<Environment>> {
@@ -184,7 +181,7 @@ impl EnvironmentMethods for Rc<RefCell<Environment>> {
         result.ok_or_else(|| format!("Undefined variable '{}'", name))
     }
 
-    fn assign_at(&self, distance: usize, name: &str, value: Value) -> Result<(), String> {
+    fn _assign_at(&self, distance: usize, name: &str, value: Value) -> Result<(), String> {
         let target_env = self.ancestor(distance);
         let mut env_ref = target_env.borrow_mut();
         if env_ref.values.contains_key(name) {

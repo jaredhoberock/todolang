@@ -42,6 +42,7 @@ pub enum TokenKind {
     Underscore,
 
     // Two-character tokens
+    Arrow,
     BangEqual,
     EqualEqual,
     EqualGreater,
@@ -96,6 +97,7 @@ impl std::fmt::Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             TokenKind::And => write!(f, "and"),
+            TokenKind::Arrow => write!(f, "->"),
             TokenKind::Assert => write!(f, "assert"),
             TokenKind::Bang => write!(f, "!"),
             TokenKind::BangEqual => write!(f, "!="),

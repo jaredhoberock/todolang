@@ -146,12 +146,18 @@ impl<'a> Iterator for Lexer<'a> {
                 '}' => Token::new(TokenKind::RightBrace, String::from("}"), SourceSpan::new(c_loc, self.loc.clone())),
                 ',' => Token::new(TokenKind::Comma,      String::from(","), SourceSpan::new(c_loc, self.loc.clone())),
                 '.' => Token::new(TokenKind::Dot,        String::from("."), SourceSpan::new(c_loc, self.loc.clone())),
-                '-' => Token::new(TokenKind::Minus,      String::from("-"), SourceSpan::new(c_loc, self.loc.clone())),
                 '+' => Token::new(TokenKind::Plus,       String::from("+"), SourceSpan::new(c_loc, self.loc.clone())),
                 ';' => Token::new(TokenKind::Semicolon,  String::from(";"), SourceSpan::new(c_loc, self.loc.clone())),
                 '*' => Token::new(TokenKind::Star,       String::from("*"), SourceSpan::new(c_loc, self.loc.clone())),
 
                 // two-character lexemes
+                '-' => {
+                    if self.match_char('>') {
+                        Token::new(TokenKind::Arrow, String::from("->"), SourceSpan::new(c_loc, self.loc.clone()))
+                    } else {
+                        Token::new(TokenKind::Minus, String::from("-"), SourceSpan::new(c_loc, self.loc.clone()))
+                    }
+                }
                 '!' => {
                     if self.match_char('=') {
                         Token::new(TokenKind::BangEqual, String::from("!="), SourceSpan::new(c_loc, self.loc.clone()))
@@ -265,10 +271,11 @@ mod tests {
 
     #[test]
     fn test_two_char_tokens() {
-        let source = "== != <= >=";
+        let source = "-> == != <= >=";
         let tokens: Vec<Token> = Lexer::new(source).collect();
 
         let expected_kinds = [
+            TokenKind::Arrow,
             TokenKind::EqualEqual,
             TokenKind::BangEqual,
             TokenKind::LessEqual,

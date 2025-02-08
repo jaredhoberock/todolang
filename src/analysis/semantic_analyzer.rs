@@ -336,10 +336,11 @@ impl SemanticAnalyzer {
 
     fn analyze_declaration(&mut self, decl: &Declaration) -> Result<Rc<TypedDeclaration>, Error> {
         match decl {
-            Declaration::Function { name, parameters, body } => {
+            Declaration::Function { name, parameters, return_type, body } => {
                 self.analyze_function_declaration(
                     name, 
                     parameters, 
+                    return_type,
                     body,
                     decl.source_span()
                 )
@@ -374,11 +375,25 @@ impl SemanticAnalyzer {
         &mut self, 
         name: &Token, 
         untyped_parameters: &Vec<Parameter>, 
+        untyped_return_type: &TypeExpression,
         untyped_body: &Expression, 
         location: SourceSpan) -> Result<Rc<TypedDeclaration>, Error>
     {
-        // declare the function with an unknown type
-        self.env.declare(&name.lexeme, self.type_env.fresh())
+        // analyze parameter type ascriptions
+        let mut param_types = Vec::new();
+        for p in untyped_parameters {
+            let ty = self.analyze_type_ascription(&p.ascription)?;
+            param_types.push(ty);
+        }
+
+        // analyze return type
+        let return_type = self.analyze_type_expression(&untyped_return_type)?;
+
+        // build the function type
+        let fun_type = self.type_env.get_function(param_types, return_type);
+
+        // declare the function
+        self.env.declare(&name.lexeme, fun_type)
             .err_loc(&location)?;
 
         // enter function scope
@@ -388,18 +403,13 @@ impl SemanticAnalyzer {
             for param in untyped_parameters {
                 parameters.push(slf.analyze_parameter(&param)?);
             };
-            let param_types = parameters.iter().map(|p| p.type_()).collect();
-
-            // XXX TODO analyze return type ascription
-            let result_type = slf.type_env.fresh();
-            let fun_type = slf.type_env.get_function(param_types, result_type);
 
             // analyze body
             let body = slf.analyze_expression(&untyped_body)?;
 
             // check return type against body
-            slf.type_env.unify(result_type, body.type_())
-                .err_loc(&location)?;
+            slf.type_env.unify(return_type, body.type_())
+                .err_loc(&untyped_return_type.source_span())?;
 
             Ok(Rc::new(TypedDeclaration::Function {
                 name: name.clone(),

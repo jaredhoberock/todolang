@@ -91,9 +91,19 @@ impl Interpreter {
 
     fn interpret_declaration(&mut self, decl: Rc<Declaration>) -> Result<(),Error> {
         match &*decl {
+            Declaration::Function{ name, parameters, body, type_, location } => {
+                self.interpret_function_declaration(
+                    &decl,
+                    &name,
+                    &parameters,
+                    &body,
+                    &type_,
+                    &location,
+                )
+            },
             Declaration::Variable{ initializer, location, .. } => {
                 self.interpret_variable_declaration(
-                    decl.clone(),
+                    &decl,
                     &initializer,
                     &location,
                 )
@@ -102,14 +112,28 @@ impl Interpreter {
         }
     }
 
+    fn interpret_function_declaration(
+        &mut self,
+        decl: &Rc<Declaration>,
+        name: &Token,
+        _parameters: &Vec<Rc<Declaration>>,
+        _body: &Expression,
+        _type_: &Type,
+        location: &SourceSpan,
+    ) -> Result<(), Error> {
+        let function = Function::new(decl.clone(), self.env.clone());
+        self.env.define(name.lexeme.clone(), Value::Function(function))
+            .err_loc(&location)
+    }
+
     fn interpret_variable_declaration(
         &mut self,
-        decl: Rc<Declaration>, 
+        decl: &Rc<Declaration>, 
         initializer: &Expression,
         location: &SourceSpan,
     ) -> Result<(), Error> {
         let value = self.interpret_expression(initializer)?;
-        match &*decl {
+        match decl.as_ref() {
             Declaration::Variable { name, .. } => {
                 self.env.define(name.lexeme.clone(), value)
                     .err_loc(&location)
@@ -214,7 +238,7 @@ impl Interpreter {
 
             match last_expr {
                 Some(expr) => slf.interpret_expression(&*expr),
-                None => Ok(Value::unit()),
+                None => Ok(Value::Unit),
             }
         })
     }
@@ -236,7 +260,13 @@ impl Interpreter {
         })
     }
 
-    fn interpret_unary_expression(&mut self, op: &Token, operand: &Box<Expression>, _type_: &Type, location: &SourceSpan) -> Result<Value,Error> {
+    fn interpret_unary_expression(
+        &mut self, 
+        op: &Token, 
+        operand: &Box<Expression>, 
+        _type_: &Type, 
+        _location: &SourceSpan,
+    ) -> Result<Value,Error> {
         let operand_value = self.interpret_expression(&*operand)?;
         match op.kind {
             TokenKind::Bang  => Ok(Value::Bool(!operand_value.as_bool())),

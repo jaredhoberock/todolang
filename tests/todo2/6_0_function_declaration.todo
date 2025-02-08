@@ -1,0 +1,6 @@
+fun f(arg: String) -> Number {
+  print arg;
+  13
+}
+
+print "OK";

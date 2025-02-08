@@ -538,7 +538,7 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    // function_declaration := "fun" identifier "(" parameters? ")" expression
+    // function_declaration := "fun" identifier "(" parameters? ")" "->" type_expression expression
     #[restore_state_on_err]
     fn function_declaration(&mut self) -> Result<Declaration, ParseError> {
         let _fun = self
@@ -553,11 +553,14 @@ impl<'a> Parser<'a> {
         }
 
         let _rparen = self.token(TokenKind::RightParen)?;
+        let _arrow = self.token(TokenKind::Arrow)?;
+        let return_type = self.type_expression()?;
         let body = self.expression()?;
 
         Ok(Declaration::Function {
             name,
             parameters,
+            return_type,
             body,
         })
     }

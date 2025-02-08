@@ -1,0 +1,4 @@
+fun f(arg: String) -> String {
+  print arg;
+  13
+}

@@ -109,6 +109,7 @@ pub enum Declaration {
     Function {
         name: Token,
         parameters: Vec<Parameter>,
+        return_type: TypeExpression,
         body: Expression,
     },
     Variable {
