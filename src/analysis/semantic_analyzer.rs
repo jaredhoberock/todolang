@@ -139,50 +139,21 @@ impl SemanticAnalyzer {
         let num_ty  = self.type_env.get_number();
         let str_ty  = self.type_env.get_string();
 
-        // determine the result type and impose constraints
-        let result_type = match op.kind {
-            // for 'and' and 'or', lhs & rhs must be bool
-            TokenKind::And | TokenKind::Or => {
-                self.type_env.unify(bool_ty, lhs_ty).err_loc(&location)?;
-                self.type_env.unify(bool_ty, rhs_ty).err_loc(&location)?;
-                bool_ty
-            },
-            // for equality, lhs & rhs must have the same type
-            TokenKind::BangEqual | TokenKind::EqualEqual => {
-                self.type_env.unify(lhs_ty, rhs_ty).err_loc(&location)?;
-                bool_ty
-            },
-            // for comparisons, both must be numbers
-            TokenKind::Greater | TokenKind::GreaterEqual | TokenKind::Less | TokenKind::LessEqual => {
-                self.type_env.unify(num_ty, lhs_ty).err_loc(&location)?;
-                self.type_env.unify(num_ty, rhs_ty).err_loc(&location)?;
-                bool_ty
-            },
-            // for arithmetic, both must be numbers
-            TokenKind::Minus | TokenKind::Slash | TokenKind::Star => {
-                self.type_env.unify(num_ty, lhs_ty).err_loc(&location)?;
-                self.type_env.unify(num_ty, rhs_ty).err_loc(&location)?;
-                num_ty   
-            },
-            // for plus, both must be numbers or strings
+        // determine input and result types
+        let (input_ty, result_ty) = match op.kind {
+            TokenKind::And | TokenKind::Or => (bool_ty, bool_ty),
+            TokenKind::BangEqual | TokenKind::EqualEqual => (lhs_ty, bool_ty),
+            TokenKind::Greater | TokenKind::GreaterEqual | TokenKind::Less | TokenKind::LessEqual => (num_ty, bool_ty),
+            TokenKind::Minus | TokenKind::Slash | TokenKind::Star => (num_ty, num_ty),
             TokenKind::Plus => {
-                // try unifying as numbers
-                if self.type_env.unify(num_ty, lhs_ty).is_ok() &&
-                   self.type_env.unify(num_ty, rhs_ty).is_ok() {
-                    num_ty
-                }
-                // otherwise, try unifying as strings
-                else if self.type_env.unify(str_ty, lhs_ty).is_ok() &&
-                        self.type_env.unify(str_ty, rhs_ty).is_ok() {
-                    str_ty
-                }
-                else {
-                    return Err(Error::general(
-                        "operator '+' requires both operands to be either 'Number' or 'String'",
-                        &location))
+                // plus requires both parameters to be either numbers or strings
+                if self.type_env.unify(num_ty, lhs_ty).is_ok() {
+                    (num_ty, num_ty)
+                } else {
+                    (str_ty, str_ty)
                 }
             },
-
+            // XXX this sucks, we need to match on operators, not tokens
             _ => {
                 return Err(Error::general(
                     format!("Unknown binary operator '{}'", op.lexeme),
@@ -190,11 +161,18 @@ impl SemanticAnalyzer {
             }
         };
 
+        // unify inputs
+        self.type_env.unify(input_ty, lhs_ty)
+            .err_loc(&lhs.type_defining_location())?;
+
+        self.type_env.unify(input_ty, rhs_ty)
+            .err_loc(&rhs.type_defining_location())?;
+
         Ok(TypedExpression::Binary {
             lhs: Box::new(lhs),
             op: op.clone(),
             rhs: Box::new(rhs),
-            type_: result_type,
+            type_: result_ty,
             location
         })
     }
