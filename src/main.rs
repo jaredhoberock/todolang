@@ -27,7 +27,7 @@ fn interpret2(filename: &str, source: &str) -> Result<(), String> {
 
 fn interpret_from_file2(filename: &str) -> Result<(),String> {
     let source = std::fs::read_to_string(filename)
-        .map_err(|e| format!("Error reading file: {}", e))?;
+        .map_err(|e| format!("Error reading '{}': {}", filename, e))?;
     interpret2(filename, &source)
 }
 
