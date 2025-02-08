@@ -37,6 +37,23 @@ impl Interpreter {
         Self { env: Environment::new_shared_global() }
     }
 
+    fn with_environment<T>(
+        &mut self,
+        new_env: Rc<RefCell<Environment>>,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let mut temp_env = new_env;
+        std::mem::swap(&mut self.env, &mut temp_env);
+        let result = f(self);
+        std::mem::swap(&mut self.env, &mut temp_env);
+        result
+    }
+
+    fn with_enclosed_environment<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        let env = Environment::new_enclosed_shared(self.env.clone());
+        self.with_environment(env, f)
+    }
+
     pub fn interpret_module(&mut self, module: &Module) -> Result<(),Error> {
         for stmt in &module.statements {
             self.interpret_statement(stmt)?;
@@ -185,12 +202,21 @@ impl Interpreter {
 
     fn interpret_block_expression(
         &mut self,
-        _statements: &Vec<Statement>,
-        _last_expr: &Option<Box<Expression>>,
+        statements: &Vec<Statement>,
+        last_expr: &Option<Box<Expression>>,
         _type_: &Type,
         _location: &SourceSpan
     ) -> Result<Value,Error> {
-        todo!("interpret_block_expression")
+        self.with_enclosed_environment(|slf| {
+            for stmt in statements {
+                slf.interpret_statement(&stmt)?;
+            }
+
+            match last_expr {
+                Some(expr) => slf.interpret_expression(&*expr),
+                None => Ok(Value::unit()),
+            }
+        })
     }
 
     fn interpret_call_expression(

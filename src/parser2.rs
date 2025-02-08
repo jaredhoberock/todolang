@@ -273,12 +273,17 @@ impl<'a> Parser<'a> {
         self.identifier().map(|name| Expression::Variable { name })
     }
 
-    // primary_expression := literal_expression | variable
+    // primary_expression := literal_expression | block_expression | variable
     #[restore_state_on_err]
     fn primary_expression(&mut self) -> Result<Expression, ParseError> {
         let literal = self.literal_expression();
         if literal.is_ok() {
             return literal;
+        }
+
+        let block = self.block_expression();
+        if block.is_ok() {
+            return block;
         }
 
         let var = self.variable_expression();
@@ -288,6 +293,7 @@ impl<'a> Parser<'a> {
 
         let errors = vec![
             literal.unwrap_err(),
+            block.unwrap_err(),
             var.unwrap_err(),
         ];
 
@@ -532,7 +538,7 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    // function_declaration := "fun" identifier "(" parameters? ")" block_expression
+    // function_declaration := "fun" identifier "(" parameters? ")" expression
     #[restore_state_on_err]
     fn function_declaration(&mut self) -> Result<Declaration, ParseError> {
         let _fun = self
@@ -547,7 +553,7 @@ impl<'a> Parser<'a> {
         }
 
         let _rparen = self.token(TokenKind::RightParen)?;
-        let body = self.block_expression()?;
+        let body = self.expression()?;
 
         Ok(Declaration::Function {
             name,

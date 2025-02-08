@@ -1,0 +1,10 @@
+var x: String = {
+  print "statement 1";
+  var x: String = "inside block";
+  print x;
+  var y: String = "OK";
+  y
+};
+
+print "outside block";
+print x;
