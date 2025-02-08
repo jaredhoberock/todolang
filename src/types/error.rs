@@ -15,11 +15,11 @@ pub enum InternalError {
 #[error("{details}")]
 pub struct Error {
     details: InternalError,
-    pub span: SourceSpan,
+    pub location: SourceSpan,
 }
 
 impl Error {
-    pub fn new(details: InternalError, span: SourceSpan) -> Self {
-        Self { details, span, }
+    pub fn new(details: InternalError, location: SourceSpan) -> Self {
+        Self { details, location, }
     }
 }

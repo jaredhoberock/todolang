@@ -162,7 +162,7 @@ impl<'a> Parser<'a> {
             .map(|token| {
                 Literal {
                     value: LiteralValue::Number(token.literal.unwrap().as_number()),
-                    span: token.span
+                    location: token.location
                 }
             })
     }
@@ -172,7 +172,7 @@ impl<'a> Parser<'a> {
             .map(|token| {
                 Literal {
                     value: LiteralValue::String(token.literal.unwrap().as_string()),
-                    span: token.span
+                    location: token.location
                 }
             })
     }
@@ -182,7 +182,7 @@ impl<'a> Parser<'a> {
             .map(|token| {
                 Literal {
                     value: LiteralValue::Bool(true),
-                    span: token.span
+                    location: token.location
                 }
             })
     }
@@ -192,7 +192,7 @@ impl<'a> Parser<'a> {
             .map(|token| {
                 Literal {
                     value: LiteralValue::Bool(false),
-                    span: token.span
+                    location: token.location
                 }
             })
     }
@@ -202,7 +202,7 @@ impl<'a> Parser<'a> {
             .map(|token| {
                 Literal {
                     value: LiteralValue::Nil,
-                    span: token.span
+                    location: token.location
                 }
             })
     }

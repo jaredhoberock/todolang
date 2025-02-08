@@ -11,7 +11,7 @@ pub enum LiteralValue {
 #[derive(Debug)]
 pub struct Literal {
     pub value: LiteralValue,
-    pub span: SourceSpan,
+    pub location: SourceSpan,
 }
 
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ pub enum BinOpKind {
 #[derive(Debug, Clone)]
 pub struct BinOp {
     pub kind: BinOpKind,
-    pub span: SourceSpan,
+    pub location: SourceSpan,
 }
 
 impl BinOp {
@@ -53,7 +53,7 @@ impl BinOp {
             TokenKind::Minus => BinOpKind::Sub,
             _ => panic!("Internal error: unknown binary operator '{}'", op.lexeme),
         };
-        Self { kind, span: op.span }
+        Self { kind, location: op.location }
     }
 }
 
@@ -86,27 +86,27 @@ pub enum Expression {
 }
 
 impl Expression {
-    pub fn source_span(&self) -> SourceSpan {
+    pub fn location(&self) -> SourceSpan {
         match &self {
             Self::Binary{ lhs, rhs, .. } => {
-                lhs.source_span()
-                    .merge(&rhs.source_span())
+                lhs.location()
+                    .merge(&rhs.location())
             },
             Self::Block{ lbrace, rbrace, .. } => {
-                lbrace.span.merge(&rbrace.span)
+                lbrace.location.merge(&rbrace.location)
             },
             Self::Call{ callee, closing_paren, .. } => {
-                callee.source_span()
-                    .merge(&closing_paren.span)
+                callee.location()
+                    .merge(&closing_paren.location)
             },
             Self::Literal(lit) => {
-                lit.span.clone()
+                lit.location.clone()
             },
             Self::Unary{ op, operand } => {
-                op.span.merge(&operand.source_span())
+                op.location.merge(&operand.location())
             },
             Self::Variable{ name } => {
-                name.span.clone()
+                name.location.clone()
             }
         }
     }
@@ -118,8 +118,8 @@ pub struct TypeExpression {
 }
 
 impl TypeExpression {
-    pub fn source_span(&self) -> SourceSpan {
-        self.identifier.span.clone()
+    pub fn location(&self) -> SourceSpan {
+        self.identifier.location.clone()
     }
 }
 
@@ -130,8 +130,8 @@ pub struct TypeAscription {
 }
 
 impl TypeAscription {
-    pub fn source_span(&self) -> SourceSpan {
-        self.colon.span.merge(&self.expr.source_span())
+    pub fn location(&self) -> SourceSpan {
+        self.colon.location.merge(&self.expr.location())
     }
 }
 
@@ -142,8 +142,8 @@ pub struct Parameter {
 }
 
 impl Parameter {
-    pub fn source_span(&self) -> SourceSpan {
-        self.name.span.merge(&self.ascription.source_span())
+    pub fn location(&self) -> SourceSpan {
+        self.name.location.merge(&self.ascription.location())
     }
 }
 
@@ -164,13 +164,13 @@ pub enum Declaration {
 }
 
 impl Declaration {
-    pub fn source_span(&self) -> SourceSpan {
+    pub fn location(&self) -> SourceSpan {
         match &self {
             Self::Function{ name, body, .. } => {
-                name.span.merge(&body.source_span())
+                name.location.merge(&body.location())
             },
             Self::Variable{ name, semi, .. } => {
-                name.span.merge(&semi.span)
+                name.location.merge(&semi.location)
             },
         }
     }
@@ -195,17 +195,17 @@ pub enum Statement {
 }
 
 impl Statement {
-    pub fn source_span(&self) -> SourceSpan {
+    pub fn location(&self) -> SourceSpan {
         match &self {
             Self::Assert{ expr, semi } => {
-                expr.source_span().merge(&semi.span)
+                expr.location().merge(&semi.location)
             },
-            Self::Decl(d) => d.source_span(),
+            Self::Decl(d) => d.location(),
             Self::Expr{ expr, semi } => {
-                expr.source_span().merge(&semi.span)
+                expr.location().merge(&semi.location)
             },
             Self::Print{ print, semi, .. } => {
-                print.span.merge(&semi.span)
+                print.location.merge(&semi.location)
             }
         }
     }

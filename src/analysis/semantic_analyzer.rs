@@ -101,25 +101,25 @@ impl SemanticAnalyzer {
     fn analyze_expression(&mut self, expr: &Expression) -> Result<TypedExpression, Error> {
         match expr {
             Expression::Binary { lhs, op, rhs } => {
-                self.analyze_binary_expression(&lhs, &op, &rhs, expr.source_span())
+                self.analyze_binary_expression(&lhs, &op, &rhs, expr.location())
             },
             Expression::Block{ statements, last_expr, .. } => {
                 self.analyze_block_expression(
                     &statements,
                     &last_expr,
-                    expr.source_span()
+                    expr.location()
                 )
             },
             Expression::Call{ callee, arguments, .. } => {
                 self.analyze_call_expression(
                     &callee, 
                     &arguments, 
-                    expr.source_span()
+                    expr.location()
                 )
             },
-            Expression::Literal(lit) => self.analyze_literal_expression(&lit.value, expr.source_span()),
-            Expression::Unary{ op, operand } => self.analyze_unary_expression(&op, &operand, expr.source_span()),
-            Expression::Variable{ name } => self.analyze_variable_expression(&name, expr.source_span()),
+            Expression::Literal(lit) => self.analyze_literal_expression(&lit.value, expr.location()),
+            Expression::Unary{ op, operand } => self.analyze_unary_expression(&op, &operand, expr.location()),
+            Expression::Variable{ name } => self.analyze_variable_expression(&name, expr.location()),
         }
     }
 
@@ -302,7 +302,7 @@ impl SemanticAnalyzer {
             .lookup_type(&expr.identifier.lexeme)
             .ok_or_else(|| { Error::general(
                 format!("Unknown type: '{}'", &expr.identifier.lexeme),
-                &expr.source_span()
+                &expr.location()
             )})
     }
 
@@ -315,7 +315,7 @@ impl SemanticAnalyzer {
         if !expr.type_().is_bool() {
             return Err(Error::general(
                 "Argument to 'assert' must be 'bool'",
-                &untyped_expr.source_span()
+                &untyped_expr.location()
             ))
         }
 
@@ -334,7 +334,7 @@ impl SemanticAnalyzer {
                     parameters, 
                     return_type,
                     body,
-                    decl.source_span()
+                    decl.location()
                 )
             },
             Declaration::Variable { name, ascription, initializer, .. } => {
@@ -342,7 +342,7 @@ impl SemanticAnalyzer {
                     name, 
                     ascription, 
                     initializer, 
-                    decl.source_span()
+                    decl.location()
                 )
             },
         }
@@ -351,12 +351,12 @@ impl SemanticAnalyzer {
     fn analyze_parameter(&mut self, param: &Parameter) -> Result<Rc<TypedDeclaration>, Error> {
         let type_ = self.analyze_type_ascription(&param.ascription)?;
         self.env.declare(&param.name.lexeme, type_)
-            .err_loc(&param.source_span())?;
+            .err_loc(&param.location())?;
 
         let result = Rc::new(TypedDeclaration::Parameter {
             name: param.name.clone(),
             type_,
-            location: param.source_span(),
+            location: param.location(),
         });
 
         self.env.define(&param.name.lexeme, result.clone());
@@ -402,7 +402,7 @@ impl SemanticAnalyzer {
             // check return type against body
             slf.type_env.unify(return_type, body.type_())
                 .mismatch_loc(
-                    untyped_return_type.source_span(),
+                    untyped_return_type.location(),
                     body.type_defining_location()
                 )?;
 
@@ -468,10 +468,10 @@ impl SemanticAnalyzer {
 
     fn analyze_statement(&mut self, stmt: &Statement) -> Result<TypedStatement, Error> {
         match stmt {
-            Statement::Assert { expr, .. } => self.analyze_assert_statement(&expr, stmt.source_span()),
+            Statement::Assert { expr, .. } => self.analyze_assert_statement(&expr, stmt.location()),
             Statement::Decl(decl) => self.analyze_declaration(&decl).map(TypedStatement::Decl),
-            Statement::Expr { expr, .. } => self.analyze_expression_statement(&expr, stmt.source_span()),
-            Statement::Print { expr, .. } => self.analyze_print_statement(&expr, stmt.source_span()),
+            Statement::Expr { expr, .. } => self.analyze_expression_statement(&expr, stmt.location()),
+            Statement::Print { expr, .. } => self.analyze_print_statement(&expr, stmt.location()),
         }
     }
 

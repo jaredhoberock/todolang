@@ -16,12 +16,12 @@ pub fn format_diagnostic_for_parse_error2(error: &ParseError2, filename: &str, s
     let mut diagnostic = Diagnostic::error().with_message(error.to_string());
 
     if let Some(token) = &error.error_token {
-        let span = if token.kind == TokenKind::Eof {
+        let range = if token.kind == TokenKind::Eof {
             let trimmed = source.trim_end_matches('\n');
             let offset = trimmed.len();
             offset..offset
         } else {
-            token.span.as_range()
+            token.location.as_range()
         };
 
         let label_message = if token.kind == TokenKind::Eof {
@@ -31,7 +31,7 @@ pub fn format_diagnostic_for_parse_error2(error: &ParseError2, filename: &str, s
         };
 
         diagnostic.labels.push(
-            Label::primary((), span)
+            Label::primary((), range)
                 .with_message(label_message)
         );
     }
@@ -50,12 +50,12 @@ pub fn format_diagnostic_for_parse_error(error: &ParseError, filename: &str, sou
     let mut diagnostic = Diagnostic::error().with_message(error.to_string());
 
     if let Some(token) = &error.error_token {
-        let span = if token.kind == TokenKind::Eof {
+        let range = if token.kind == TokenKind::Eof {
             let trimmed = source.trim_end_matches('\n');
             let offset = trimmed.len();
             offset..offset
         } else {
-            token.span.as_range()
+            token.location.as_range()
         };
 
         let label_message = if token.kind == TokenKind::Eof {
@@ -65,7 +65,7 @@ pub fn format_diagnostic_for_parse_error(error: &ParseError, filename: &str, sou
         };
 
         diagnostic.labels.push(
-            Label::primary((), span)
+            Label::primary((), range)
                 .with_message(label_message)
         );
     }
@@ -81,7 +81,7 @@ pub fn format_diagnostic_for_parse_error(error: &ParseError, filename: &str, sou
 fn add_labels_for_semantic_error(error: &SemanticError, diagnostic: &mut Diagnostic<()>) {
     match error {
         SemanticError::Type(e) => {
-            diagnostic.labels.push(Label::primary((), e.span.as_range()))
+            diagnostic.labels.push(Label::primary((), e.location.as_range()))
         },
         _ => (),
     };

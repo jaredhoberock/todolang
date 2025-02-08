@@ -161,7 +161,7 @@ impl TypeChecker {
         self.memoize(From::from(expr), |slf| {
             let var_ty = slf.check_variable(&expr.var)?;
             let rhs_ty = slf.check_expression(&*expr.expr)?;
-            unify(var_ty, rhs_ty).map_err(|e| Error::new(e, expr.source_span()))?;
+            unify(var_ty, rhs_ty).map_err(|e| Error::new(e, expr.location()))?;
             Ok(var_ty)
         })
     }
@@ -177,7 +177,7 @@ impl TypeChecker {
             let expected_function_type = slf.env.get_function(argument_types, result_type);
 
             unify(expected_function_type, callee_type)
-                .map_err(|e| Error::new(e, expr.source_span()))?;
+                .map_err(|e| Error::new(e, expr.location()))?;
             Ok(result_type)
         })
     }
@@ -208,7 +208,7 @@ impl TypeChecker {
             .lookup_type(&expr.identifier.lexeme)
             .ok_or_else(|| Error::new(
                 InternalError::UnknownType(expr.identifier.lexeme.clone()),
-                expr.source_span()
+                expr.location()
             ))
     }
 
@@ -231,7 +231,7 @@ impl TypeChecker {
             self.env.get_unknown()
         };
 
-        unify(declared, inferred).map_err(|e| Error::new(e, decl.source_span()))?;
+        unify(declared, inferred).map_err(|e| Error::new(e, decl.location()))?;
 
         Ok(declared)
     }

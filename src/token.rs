@@ -1,4 +1,4 @@
-use crate::source_location::{SourceLocation, SourceSpan};
+use crate::source_location::SourceSpan;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -173,16 +173,16 @@ pub struct Token {
     pub kind: TokenKind,
     pub lexeme: String,
     pub literal: Option<TokenLiteral>,
-    pub span: SourceSpan,
+    pub location: SourceSpan,
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, lexeme: String, span: SourceSpan) -> Self {
+    pub fn new(kind: TokenKind, lexeme: String, location: SourceSpan) -> Self {
         Token {
             kind,
             lexeme,
             literal: None,
-            span,
+            location,
         }
     }
 
@@ -190,13 +190,13 @@ impl Token {
         kind: TokenKind,
         lexeme: String,
         literal: String,
-        span: SourceSpan,
+        location: SourceSpan,
     ) -> Self {
         Token {
             kind,
             lexeme,
             literal: Some(TokenLiteral::String(literal)),
-            span,
+            location,
         }
     }
 
@@ -204,17 +204,13 @@ impl Token {
         kind: TokenKind,
         lexeme: String,
         literal: f64,
-        span: SourceSpan,
+        location: SourceSpan,
     ) -> Self {
         Token {
             kind,
             lexeme,
             literal: Some(TokenLiteral::Number(literal)),
-            span,
+            location,
         }
-    }
-
-    pub fn location(&self) -> &SourceLocation {
-        &self.span.start
     }
 }

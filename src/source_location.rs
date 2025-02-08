@@ -96,11 +96,11 @@ impl std::fmt::Display for SourceSpan {
 }
 
 pub trait Locatable {
-    fn source_span(&self) -> SourceSpan;
+    fn location(&self) -> SourceSpan;
 }
 
 impl<T: Locatable> Locatable for Box<T> {
-    fn source_span(&self) -> SourceSpan {
-        (**self).source_span()
+    fn location(&self) -> SourceSpan {
+        (**self).location()
     }
 }

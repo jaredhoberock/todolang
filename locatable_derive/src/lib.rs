@@ -49,10 +49,10 @@ pub fn derive_locatable(input: TokenStream) -> TokenStream {
 
             quote! {
                 impl crate::source_location::Locatable for #name {
-                    fn source_span(&self) -> crate::source_location::SourceSpan {
+                    fn location(&self) -> crate::source_location::SourceSpan {
                         let first = #first_access;
                         let last = #last_access;
-                        crate::source_location::SourceSpan::new(first.source_span().start, last.source_span().end)
+                        crate::source_location::SourceSpan::new(first.location().start, last.location().end)
                     }
                 }
             }
@@ -65,7 +65,7 @@ pub fn derive_locatable(input: TokenStream) -> TokenStream {
                     // Newtype variant: Variant(inner)
                     Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
                         quote! {
-                            #name::#variant_ident(inner) => inner.source_span(),
+                            #name::#variant_ident(inner) => inner.location(),
                         }
                     },
                     // Tuple variant with multiple fields: combine first and last.
@@ -76,7 +76,7 @@ pub fn derive_locatable(input: TokenStream) -> TokenStream {
                             #name::#variant_ident(inner) => {
                                 let first = &inner.#first_index;
                                 let last = &inner.#last_index;
-                                crate::source_location::SourceSpan::new(first.source_span().start, last.source_span().end)
+                                crate::source_location::SourceSpan::new(first.location().start, last.location().end)
                             },
                         }
                     },
@@ -85,7 +85,7 @@ pub fn derive_locatable(input: TokenStream) -> TokenStream {
                         let field = fields.named.iter().next().unwrap();
                         let field_ident = field.ident.as_ref().unwrap();
                         quote! {
-                            #name::#variant_ident { #field_ident } => #field_ident.source_span(),
+                            #name::#variant_ident { #field_ident } => #field_ident.location(),
                         }
                     },
                     // Struct variant with multiple fields: use first and last fields.
@@ -96,7 +96,7 @@ pub fn derive_locatable(input: TokenStream) -> TokenStream {
                         let last_ident = last_field.ident.as_ref().unwrap();
                         quote! {
                             #name::#variant_ident { #first_ident, .. } => {
-                                crate::source_location::SourceSpan::new(#first_ident.source_span().start, #last_ident.source_span().end)
+                                crate::source_location::SourceSpan::new(#first_ident.location().start, #last_ident.location().end)
                             },
                         }
                     },
@@ -110,7 +110,7 @@ pub fn derive_locatable(input: TokenStream) -> TokenStream {
 
             quote! {
                 impl crate::source_location::Locatable for #name {
-                    fn source_span(&self) -> crate::source_location::SourceSpan {
+                    fn location(&self) -> crate::source_location::SourceSpan {
                         match self {
                             #(#arms)*
                         }

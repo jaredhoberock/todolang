@@ -4,8 +4,8 @@ use enum_macros::EnumRef;
 use locatable_derive::Locatable;
 
 impl Locatable for Token {
-    fn source_span(&self) -> SourceSpan {
-        self.span.clone()
+    fn location(&self) -> SourceSpan {
+        self.location.clone()
     }
 }
 
@@ -20,12 +20,12 @@ pub enum LiteralValue {
 #[derive(Debug)]
 pub struct Literal {
     pub value: LiteralValue,
-    pub span: SourceSpan,
+    pub location: SourceSpan,
 }
 
 impl Locatable for Literal {
-    fn source_span(&self) -> SourceSpan {
-        self.span.clone()
+    fn location(&self) -> SourceSpan {
+        self.location.clone()
     }
 }
 
@@ -100,9 +100,9 @@ pub struct MatchExpression {
 }
 
 impl Locatable for MatchExpression {
-    fn source_span(&self) -> SourceSpan {
-        // XXX just return the span of 'match' for now
-        self.keyword.source_span()
+    fn location(&self) -> SourceSpan {
+        // XXX just return the location of 'match' for now
+        self.keyword.location()
     }
 }
 
@@ -180,8 +180,8 @@ pub struct FunctionDeclaration {
 }
 
 impl Locatable for FunctionDeclaration {
-    fn source_span(&self) -> SourceSpan {
-        SourceSpan::new(self.name.span.start.clone(), self.body.source_span().end)
+    fn location(&self) -> SourceSpan {
+        SourceSpan::new(self.name.location.start.clone(), self.body.location().end)
     }
 }
 
@@ -193,13 +193,13 @@ pub struct VariableDeclaration {
 }
 
 impl Locatable for VariableDeclaration {
-    fn source_span(&self) -> SourceSpan {
-        let mut result = self.name.source_span();
+    fn location(&self) -> SourceSpan {
+        let mut result = self.name.location();
         if let Some(a) = &self.ascription {
-            result.end = a.source_span().end
+            result.end = a.location().end
         }
         if let Some(i) = &self.initializer {
-            result.end = i.source_span().end
+            result.end = i.location().end
         }
         result
     }
