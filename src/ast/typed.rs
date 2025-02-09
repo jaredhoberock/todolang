@@ -3,6 +3,8 @@ use crate::token::Token;
 use crate::types::Type;
 pub use super::untyped::BinOp;
 pub use super::untyped::BinOpKind;
+pub use super::untyped::UnOp;
+pub use super::untyped::UnOpKind;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -42,7 +44,7 @@ pub enum Expression {
     },
     Literal(Literal),
     Unary {
-        op: Token,
+        op: UnOp,
         operand: Box<Self>,
         type_: Type,
         location: SourceSpan,

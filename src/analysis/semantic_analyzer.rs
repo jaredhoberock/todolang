@@ -6,7 +6,7 @@ use crate::ast::typed::LiteralValue as TypedLiteralValue;
 use crate::ast::typed::Literal as TypedLiteral;
 use crate::ast::typed::Statement as TypedStatement;
 use crate::source_location::SourceSpan;
-use crate::token::{Token, TokenKind};
+use crate::token::Token;
 use crate::types::Error as TypeError;
 use crate::types::{Type, TypeEnvironment};
 use super::environment::Environment;
@@ -255,18 +255,14 @@ impl SemanticAnalyzer {
 
     fn analyze_unary_expression(
         &mut self,
-        op: &Token,
+        op: &UnOp,
         untyped_operand: &Box<Expression>,
         location: SourceSpan
     ) -> Result<TypedExpression, Error> {
         let operand = self.analyze_expression(&*untyped_operand)?;
         let expected_type = match op.kind {
-            TokenKind::Bang  => self.type_env.get_bool(),
-            TokenKind::Minus => self.type_env.get_number(),
-            _ => {
-                let e = Error::general(format!("Unknown unary operator '{}'", op.lexeme), &location);
-                return Err(e)
-            }
+            UnOpKind::Neg => self.type_env.get_number(),
+            UnOpKind::Not => self.type_env.get_bool(),
         };
 
         // add a unification constraint

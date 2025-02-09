@@ -459,7 +459,7 @@ impl<'a> Parser<'a> {
     fn unary(&mut self) -> Result<Expression, ParseError> {
         if let Ok(op) = self.either_token(TokenKind::Bang, TokenKind::Minus) {
             Ok(Expression::Unary {
-                op,
+                op: UnOp::from_token(op),
                 operand: Box::new(self.unary()?),
             })
         } else {

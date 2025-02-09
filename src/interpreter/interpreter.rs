@@ -276,16 +276,15 @@ impl Interpreter {
 
     fn interpret_unary_expression(
         &mut self, 
-        op: &Token, 
+        op: &UnOp, 
         operand: &Box<Expression>, 
         _type_: &Type, 
         _location: &SourceSpan,
     ) -> Result<Value,Error> {
         let operand_value = self.interpret_expression(&*operand)?;
         match op.kind {
-            TokenKind::Bang  => Ok(Value::Bool(!operand_value.as_bool())),
-            TokenKind::Minus => Ok(Value::Number(-operand_value.as_f64())),
-            _ => panic!("Internal error: unknown operator in interpret_unary_expression"),
+            UnOpKind::Neg => Ok(Value::Number(-operand_value.as_f64())),
+            UnOpKind::Not => Ok(Value::Bool(!operand_value.as_bool())),
         }
     }
 

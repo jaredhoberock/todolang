@@ -57,6 +57,29 @@ impl BinOp {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum UnOpKind {
+    Neg, // -expr
+    Not, // !expr
+}
+
+#[derive(Debug, Clone)]
+pub struct UnOp {
+    pub kind: UnOpKind,
+    pub location: SourceSpan,
+}
+
+impl UnOp {
+    pub fn from_token(op: Token) -> Self {
+        let kind = match op.kind {
+            TokenKind::Bang => UnOpKind::Not,
+            TokenKind::Minus => UnOpKind::Neg,
+            _ => panic!("Internal error: unknown unary operator '{}'", op.lexeme),
+        };
+        Self { kind, location: op.location }
+    }
+}
+
 #[derive(Debug)]
 pub enum Expression {
     Binary {
@@ -77,7 +100,7 @@ pub enum Expression {
     },
     Literal(Literal),
     Unary {
-        op: Token,
+        op: UnOp,
         operand: Box<Self>,
     },
     Variable {
