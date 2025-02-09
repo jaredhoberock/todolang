@@ -3,6 +3,18 @@ use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::Buffer;
 use codespan_reporting::term::{emit, Config};
 use crate::analysis::Error as AnalysisError;
+use crate::analysis::TypeMismatchError;
+
+fn add_labels_for_type_mismatch_error(mismatch: &TypeMismatchError, diagnostic:&mut Diagnostic<()>) {
+    diagnostic.labels.push(
+        Label::secondary((), mismatch.expected.1.as_range())
+        .with_message(format!("expected type '{}' found here", mismatch.expected.0))
+    );
+    diagnostic.labels.push(
+        Label::secondary((), mismatch.found.1.as_range())
+        .with_message(format!("expected '{}', found '{}'", mismatch.expected.0, mismatch.found.0))
+    );
+}
 
 pub fn format_diagnostic_for_analysis_error(error: &AnalysisError, filename: &str, source: &str) -> String {
     let file = SimpleFile::new(filename, source);
@@ -11,13 +23,10 @@ pub fn format_diagnostic_for_analysis_error(error: &AnalysisError, filename: &st
 
     diagnostic.labels.push(Label::primary((), error.location().as_range()));
 
-    // add additional context to type mismatches
+    // add additional context
     match error {
-        AnalysisError::Mismatch{ expected_at, .. } => {
-            diagnostic.labels.push(
-                Label::secondary((), expected_at.as_range())
-                .with_message("expected type found here")
-            );
+        AnalysisError::TypeMismatch(mismatch) => {
+            add_labels_for_type_mismatch_error(&mismatch, &mut diagnostic);
         },
         _ => (),
     }

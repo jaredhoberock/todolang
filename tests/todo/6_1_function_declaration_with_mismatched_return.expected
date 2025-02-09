@@ -2,9 +2,11 @@
   [0m[34m┌─[0m tests/todo/6_1_function_declaration_with_mismatched_return.todo:3:3
   [0m[34m│[0m
 [0m[34m1[0m [0m[34m│[0m fun f(arg: String) -> String {
-  [0m[34m│[0m                       [0m[34m------[0m [0m[34mexpected type found here[0m
+  [0m[34m│[0m                       [0m[34m------[0m [0m[34mexpected type 'String' found here[0m
 [0m[34m2[0m [0m[34m│[0m   print arg;
 [0m[34m3[0m [0m[34m│[0m   [0m[31m13[0m
   [0m[34m│[0m   [0m[31m^^[0m
+  [0m[34m│[0m   [0m[34m│[0m
+  [0m[34m│[0m   [0m[34mexpected 'String', found 'Number'[0m
 
 

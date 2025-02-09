@@ -7,27 +7,54 @@ use crate::ast::typed::Literal as TypedLiteral;
 use crate::ast::typed::Statement as TypedStatement;
 use crate::source_location::SourceSpan;
 use crate::token::Token;
-use crate::types::Error as TypeError;
+use crate::types::Error as UnifyError;
 use crate::types::{Type, TypeEnvironment};
 use super::environment::Environment;
 use super::environment::Error as NameError;
 use std::rc::Rc;
 use thiserror::Error;
 
+// XXX need to organize this into errors.rs or something
+#[derive(Debug, Error)]
+#[error("Type mismatch: expected '{0}', found '{1}'", expected.0, found.0)]
+pub struct TypeMismatchError {
+    pub expected: (Type, SourceSpan),
+    pub found: (Type, SourceSpan),
+}
+
+impl TypeMismatchError {
+    pub fn location(&self) -> SourceSpan {
+        self.found.1.clone()
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("operator error")]
+pub struct BinOpError {
+    pub op: BinOp,
+    pub expected_ty: Type,
+    pub found: (Type, SourceSpan),
+}
+
+impl BinOpError {
+    pub fn location(&self) -> SourceSpan {
+        self.found.1.clone()
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error(transparent)]
+    BinOp(BinOpError),
+
     #[error("{0}")]
     General(String, SourceSpan),
 
     #[error("{0}")]
     Name(NameError, SourceSpan),
 
-    #[error("{0}")]
-    Type(TypeError, SourceSpan),
-
-    #[error("{error}")]
-    Mismatch{ error: TypeError, expected_at: SourceSpan, found_at: SourceSpan },
+    #[error(transparent)]
+    TypeMismatch(TypeMismatchError),
 }
 
 impl Error {
@@ -37,10 +64,10 @@ impl Error {
 
     pub fn location(&self) -> SourceSpan {
         match self {
+            Error::BinOp(e) => e.location(),
             Error::General(_, loc) => loc.clone(),
             Error::Name(_, loc) => loc.clone(),
-            Error::Mismatch{found_at, ..} => found_at.clone(),
-            Error::Type(_, loc) => loc.clone(),
+            Error::TypeMismatch(e) => e.location(),
         }
     }
 }
@@ -49,16 +76,15 @@ trait ErrorLocation<T> {
     fn err_loc(self, location: &SourceSpan) -> Result<T, Error>;
 }
 
-
 impl<T> ErrorLocation<T> for Result<T, NameError> {
     fn err_loc(self, location: &SourceSpan) -> Result<T, Error> {
         self.map_err(|e| Error::Name(e, location.clone()))
     }
 }
 
-impl<T> ErrorLocation<T> for Result<T, TypeError> {
+impl<T> ErrorLocation<T> for Result<T, UnifyError> {
     fn err_loc(self, location: &SourceSpan) -> Result<T, Error> {
-        self.map_err(|e| Error::Type(e, location.clone()))
+        self.map_err(|e| Error::General(format!("{}", e), location.clone()))
     }
 }
 
@@ -66,12 +92,31 @@ trait MismatchLocation<T> {
     fn mismatch_loc(self, expected_at: SourceSpan, found_at: SourceSpan) -> Result<T, Error>;
 }
 
-impl<T> MismatchLocation<T> for Result<T,TypeError> {
+impl<T> MismatchLocation<T> for Result<T,UnifyError> {
     fn mismatch_loc(self, expected_at: SourceSpan, found_at: SourceSpan) -> Result<T, Error> {
-        self.map_err(|e| Error::Mismatch {
-            error: e,
-            expected_at,
-            found_at,
+        self.map_err(|e| {
+            let wrapped_e = TypeMismatchError {
+                expected: (e.expected, expected_at),
+                found: (e.found, found_at),
+            };
+            Error::TypeMismatch(wrapped_e)
+        })
+    }
+}
+
+trait BinOpLocation<T> {
+    fn binop_err_loc(self, op: BinOp, found_at: SourceSpan) -> Result<T,Error>;
+}
+
+impl<T> BinOpLocation<T> for Result<T,UnifyError> {
+    fn binop_err_loc(self, op: BinOp, found_at: SourceSpan) -> Result<T,Error> {
+        self.map_err(|e| {
+            let wrapped_e = BinOpError {
+                op,
+                expected_ty: e.expected,
+                found: (e.found, found_at),
+            };
+            Error::BinOp(wrapped_e)
         })
     }
 }
@@ -158,10 +203,10 @@ impl SemanticAnalyzer {
 
         // unify inputs
         self.type_env.unify(input_ty, lhs_ty)
-            .err_loc(&lhs.type_defining_location())?;
+            .binop_err_loc(op.clone(), lhs.type_defining_location())?;
 
         self.type_env.unify(input_ty, rhs_ty)
-            .err_loc(&rhs.type_defining_location())?;
+            .binop_err_loc(op.clone(), rhs.type_defining_location())?;
 
         Ok(TypedExpression::Binary {
             lhs: Box::new(lhs),

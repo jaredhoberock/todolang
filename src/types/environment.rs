@@ -2,9 +2,10 @@ use super::types::*;
 use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
-pub enum Error {
-    #[error("Type mismatch: expected '{expected}', found '{found}'")]
-    Mismatch { expected: Type, found: Type, },
+#[error("Type mismatch: expected '{expected}', found '{found}'")]
+pub struct Error {
+    pub expected: Type, 
+    pub found: Type,
 }
 
 fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Error> {
@@ -26,7 +27,7 @@ fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Er
         // For function types, both must be functions with the same number of parameters
         (Kind::Function(params1, ret1), Kind::Function(params2, ret2)) => {
             if params1.len() != params2.len() {
-                return Err(Error::Mismatch { expected, found });
+                return Err(Error { expected, found });
             }
             // Unify each parameter pair
             for (p1, p2) in params1.iter().zip(params2.iter()) {
@@ -38,7 +39,7 @@ fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Er
         // If both types are concrete and equal, unification succeeds.
         _ if expected == found => Ok(()),
         // Otherwise, the types do not unify
-        _ => Err(Error::Mismatch { expected, found }),
+        _ => Err(Error { expected, found }),
     }
 }
 
