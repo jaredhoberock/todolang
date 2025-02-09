@@ -2,34 +2,37 @@ use crate::ast::typed::BinOp;
 use crate::source_location::SourceSpan;
 use crate::types::Error as UnifyError;
 use crate::types::Type;
+use miette::Diagnostic;
 use super::environment::Error as NameError;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
-#[error("Type mismatch: expected '{0}', found '{1}'", expected.0, found.0)]
+#[derive(Debug, Error, Diagnostic)]
+#[error("Type mismatch: expected '{expected_ty}', found '{found_ty}'")]
 pub struct TypeMismatchError {
-    pub expected: (Type, SourceSpan),
-    pub found: (Type, SourceSpan),
+    pub expected_ty: Type,
+    #[label("expected type '{expected_ty}' found here")]
+    pub expected_at: SourceSpan,
+    pub found_ty: Type,
+    #[label(primary, "expected '{expected_ty}', found '{found_ty}'")]
+    pub found_at: SourceSpan,
 }
 
-impl TypeMismatchError {
-    pub fn location(&self) -> SourceSpan {
-        self.found.1.clone()
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("Type mismatch: operator '{0}' expected '{expected_ty}', found '{1}'", op.kind, found.0)]
+#[derive(Debug, Error, Diagnostic)]
+#[error("Type mismatch: operator '{0}' expected '{expected_ty}', found '{found_ty}'", op.kind)]
 pub struct BinOpError {
     pub op: BinOp,
     pub expected_ty: Type,
-    pub found: (Type, SourceSpan),
+    pub found_ty: Type,
+    #[label]
+    pub found_at: SourceSpan,
 }
 
-impl BinOpError {
-    pub fn location(&self) -> SourceSpan {
-        self.found.1.clone()
-    }
+#[derive(Debug, Error, Diagnostic)]
+#[error("{message}")]
+pub struct GeneralError {
+    pub message: String,
+    #[label]
+    pub location: SourceSpan,
 }
 
 
@@ -37,29 +40,21 @@ impl BinOpError {
 /// Error::General is the variant for which no additional context is needed for diagnosis
 /// If additional context is needed, introduce a new ErrorType above and a corresponding
 /// variant for Error.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Diagnostic)]
+#[error(transparent)]
+#[diagnostic(transparent)]
 pub enum Error {
-    #[error(transparent)]
     BinOp(BinOpError),
-
-    #[error("{0}")]
-    General(String, SourceSpan),
-
-    #[error(transparent)]
+    General(GeneralError),
     TypeMismatch(TypeMismatchError),
 }
 
 impl Error {
     pub fn general(msg: impl Into<String>, location: &SourceSpan) -> Self {
-        Self::General(msg.into(), location.clone())
-    }
-
-    pub fn location(&self) -> SourceSpan {
-        match self {
-            Error::BinOp(e) => e.location(),
-            Error::General(_, loc) => loc.clone(),
-            Error::TypeMismatch(e) => e.location(),
-        }
+        Self::General(GeneralError {
+            message: msg.into(), 
+            location: location.clone(),
+        })
     }
 }
 
@@ -75,13 +70,13 @@ pub trait ErrorContext<T> {
 
 impl<T> ErrorContext<T> for Result<T, NameError> {
     fn err_ctx(self, location: &SourceSpan) -> Result<T, Error> {
-        self.map_err(|e| Error::General(format!("{}", e), location.clone()))
+        self.map_err(|e| Error::general(format!("{}", e), location))
     }
 }
 
 impl<T> ErrorContext<T> for Result<T, UnifyError> {
     fn err_ctx(self, location: &SourceSpan) -> Result<T, Error> {
-        self.map_err(|e| Error::General(format!("{}", e), location.clone()))
+        self.map_err(|e| Error::general(format!("{}", e), location))
     }
 }
 
@@ -93,8 +88,10 @@ impl<T> TypeMismatchContext<T> for Result<T,UnifyError> {
     fn type_mismatch_err_ctx(self, expected_at: SourceSpan, found_at: SourceSpan) -> Result<T, Error> {
         self.map_err(|e| {
             let wrapped_e = TypeMismatchError {
-                expected: (e.expected, expected_at),
-                found: (e.found, found_at),
+                expected_ty: e.expected,
+                expected_at,
+                found_ty: e.found,
+                found_at,
             };
             Error::TypeMismatch(wrapped_e)
         })
@@ -111,7 +108,8 @@ impl<T> BinOpErrorContext<T> for Result<T,UnifyError> {
             let wrapped_e = BinOpError {
                 op,
                 expected_ty: e.expected,
-                found: (e.found, found_at),
+                found_ty: e.found,
+                found_at,
             };
             Error::BinOp(wrapped_e)
         })

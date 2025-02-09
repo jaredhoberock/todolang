@@ -95,6 +95,15 @@ impl std::fmt::Display for SourceSpan {
     }
 }
 
+impl From<SourceSpan> for miette::SourceSpan {
+    fn from(span: SourceSpan) -> miette::SourceSpan {
+        miette::SourceSpan::new(
+            span.start.offset.into(), 
+            (span.end.offset - span.start.offset).into()
+        )
+    }
+}
+
 pub trait Locatable {
     fn location(&self) -> SourceSpan;
 }

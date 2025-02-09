@@ -1,35 +1,73 @@
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::diagnostic::Label;
+use codespan_reporting::diagnostic::Diagnostic as CsDiagnostic;
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::Buffer;
 use codespan_reporting::term::{emit, Config};
 use crate::analysis::Error as AnalysisError;
-use crate::analysis::TypeMismatchError;
+use miette::Diagnostic as MietteDiagnostic;
 
-fn add_labels_for_type_mismatch_error(mismatch: &TypeMismatchError, diagnostic:&mut Diagnostic<()>) {
-    diagnostic.labels.push(
-        Label::secondary((), mismatch.expected.1.as_range())
-        .with_message(format!("expected type '{}' found here", mismatch.expected.0))
-    );
-    diagnostic.labels.push(
-        Label::secondary((), mismatch.found.1.as_range())
-        .with_message(format!("expected '{}', found '{}'", mismatch.expected.0, mismatch.found.0))
-    );
+// this renders a miette diagnostic natively
+// it looks nicer in some ways, worse in some ways
+//fn format_miette_diagnostic(error: AnalysisError, filename: &str, source: &str) -> String {
+//    let named_source = NamedSource::new(filename.to_owned(), source.to_owned());
+//    let report = Report::new(error)
+//        .with_source_code(named_source);
+//    let mut output = String::new();
+//    GraphicalReportHandler::new()
+//        .render_report(&mut output, &*report)
+//        .expect("Failed to render report");
+//    output
+//}
+
+fn location_of_miette_diagnostic(diag: &impl MietteDiagnostic) -> Option<std::ops::Range<usize>> {
+    let mut first_secondary = None;
+    if let Some(labels) = diag.labels() {
+        for label in labels {
+            // Save the first label as a fallback
+            if first_secondary.is_none() {
+                let start = label.offset();
+                let end = start + label.len();
+                first_secondary = Some(start..end);
+            }
+
+            // If this label is primary, return its span immediately
+            if label.primary() {
+                let start = label.offset();
+                let end = start + label.len();
+                return Some(start..end);
+            }
+        }
+    }
+    first_secondary
 }
 
-pub fn format_diagnostic_for_analysis_error(error: &AnalysisError, filename: &str, source: &str) -> String {
+fn to_codespan_diagnostic(error: AnalysisError) -> CsDiagnostic<()> {
+    let mut diag = CsDiagnostic::<()>::error()
+        .with_message(error.to_string());
+    
+    // find the overall location of the error, if it exists
+    if let Some(loc) = location_of_miette_diagnostic(&error) {
+        diag.labels.push(Label::primary((), loc));
+    }
+
+    // render all labels as secondary labels
+    if let Some(labels) = error.labels() {
+        for label in labels {
+            let start = label.offset();
+            let end = start + label.len();
+            let loc = start..end;
+            let msg = label.label().unwrap_or("");
+            diag.labels.push(Label::secondary((), loc.clone()).with_message(msg));
+        }
+    }
+
+    diag
+}
+
+pub fn format_diagnostic_for_analysis_error(error: AnalysisError, filename: &str, source: &str) -> String {
     let file = SimpleFile::new(filename, source);
 
-    let mut diagnostic = Diagnostic::error().with_message(error.to_string());
-
-    diagnostic.labels.push(Label::primary((), error.location().as_range()));
-
-    // add additional context
-    match error {
-        AnalysisError::TypeMismatch(mismatch) => {
-            add_labels_for_type_mismatch_error(&mismatch, &mut diagnostic);
-        },
-        _ => (),
-    }
+    let diagnostic = to_codespan_diagnostic(error);
 
     let mut writer = Buffer::ansi();
     emit(&mut writer, &Config::default(), &file, &diagnostic)

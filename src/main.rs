@@ -14,7 +14,7 @@ fn interpret(filename: &str, source: &str) -> Result<(), String> {
     let untyped_module = parse_module(&tokens)
         .map_err(|e| format_diagnostic_for_parse_error(&e, &filename, &source))?;
     let typed_module = analyze_module(&untyped_module)
-        .map_err(|e| format_diagnostic_for_analysis_error(&e, &filename, &source))?;
+        .map_err(|e| format_diagnostic_for_analysis_error(e, &filename, &source))?;
     let mut interp = Interpreter::new();
     interp.interpret_module(&typed_module)
         .map_err(|e| format_diagnostic_for_interpreter_error(&e, &filename, &source))
