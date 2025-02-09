@@ -1,5 +1,6 @@
 use crate::source_location::SourceSpan;
 use crate::token::{Token, TokenKind};
+use derive_more::Display;
 
 #[derive(Debug)]
 pub enum LiteralValue {
@@ -14,19 +15,31 @@ pub struct Literal {
     pub location: SourceSpan,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Display)]
 pub enum BinOpKind {
+    #[display(fmt = "+")]
     Add,
+    #[display(fmt = "and")]
     And,
+    #[display(fmt = "/")]
     Div,
+    #[display(fmt = "==")]
     Eq,
+    #[display(fmt = ">")]
     Gt,
+    #[display(fmt = ">=")]
     GtEq,
+    #[display(fmt = "<")]
     Lt,
+    #[display(fmt = "<=")]
     LtEq,
+    #[display(fmt = "*")]
     Mul,
+    #[display(fmt = "!=")]
     NotEq,
+    #[display(fmt = "or")]
     Or,
+    #[display(fmt = "-")]
     Sub,
 }
 

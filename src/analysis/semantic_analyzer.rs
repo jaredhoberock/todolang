@@ -7,119 +7,10 @@ use crate::ast::typed::Literal as TypedLiteral;
 use crate::ast::typed::Statement as TypedStatement;
 use crate::source_location::SourceSpan;
 use crate::token::Token;
-use crate::types::Error as UnifyError;
 use crate::types::{Type, TypeEnvironment};
 use super::environment::Environment;
-use super::environment::Error as NameError;
+use super::errors::*;
 use std::rc::Rc;
-use thiserror::Error;
-
-// XXX need to organize this into errors.rs or something
-#[derive(Debug, Error)]
-#[error("Type mismatch: expected '{0}', found '{1}'", expected.0, found.0)]
-pub struct TypeMismatchError {
-    pub expected: (Type, SourceSpan),
-    pub found: (Type, SourceSpan),
-}
-
-impl TypeMismatchError {
-    pub fn location(&self) -> SourceSpan {
-        self.found.1.clone()
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("operator error")]
-pub struct BinOpError {
-    pub op: BinOp,
-    pub expected_ty: Type,
-    pub found: (Type, SourceSpan),
-}
-
-impl BinOpError {
-    pub fn location(&self) -> SourceSpan {
-        self.found.1.clone()
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error(transparent)]
-    BinOp(BinOpError),
-
-    #[error("{0}")]
-    General(String, SourceSpan),
-
-    #[error("{0}")]
-    Name(NameError, SourceSpan),
-
-    #[error(transparent)]
-    TypeMismatch(TypeMismatchError),
-}
-
-impl Error {
-    pub fn general(msg: impl Into<String>, location: &SourceSpan) -> Self {
-        Self::General(msg.into(), location.clone())
-    }
-
-    pub fn location(&self) -> SourceSpan {
-        match self {
-            Error::BinOp(e) => e.location(),
-            Error::General(_, loc) => loc.clone(),
-            Error::Name(_, loc) => loc.clone(),
-            Error::TypeMismatch(e) => e.location(),
-        }
-    }
-}
-
-trait ErrorLocation<T> {
-    fn err_loc(self, location: &SourceSpan) -> Result<T, Error>;
-}
-
-impl<T> ErrorLocation<T> for Result<T, NameError> {
-    fn err_loc(self, location: &SourceSpan) -> Result<T, Error> {
-        self.map_err(|e| Error::Name(e, location.clone()))
-    }
-}
-
-impl<T> ErrorLocation<T> for Result<T, UnifyError> {
-    fn err_loc(self, location: &SourceSpan) -> Result<T, Error> {
-        self.map_err(|e| Error::General(format!("{}", e), location.clone()))
-    }
-}
-
-trait MismatchLocation<T> {
-    fn mismatch_loc(self, expected_at: SourceSpan, found_at: SourceSpan) -> Result<T, Error>;
-}
-
-impl<T> MismatchLocation<T> for Result<T,UnifyError> {
-    fn mismatch_loc(self, expected_at: SourceSpan, found_at: SourceSpan) -> Result<T, Error> {
-        self.map_err(|e| {
-            let wrapped_e = TypeMismatchError {
-                expected: (e.expected, expected_at),
-                found: (e.found, found_at),
-            };
-            Error::TypeMismatch(wrapped_e)
-        })
-    }
-}
-
-trait BinOpLocation<T> {
-    fn binop_err_loc(self, op: BinOp, found_at: SourceSpan) -> Result<T,Error>;
-}
-
-impl<T> BinOpLocation<T> for Result<T,UnifyError> {
-    fn binop_err_loc(self, op: BinOp, found_at: SourceSpan) -> Result<T,Error> {
-        self.map_err(|e| {
-            let wrapped_e = BinOpError {
-                op,
-                expected_ty: e.expected,
-                found: (e.found, found_at),
-            };
-            Error::BinOp(wrapped_e)
-        })
-    }
-}
 
 struct SemanticAnalyzer {
     env: Environment,
@@ -203,10 +94,10 @@ impl SemanticAnalyzer {
 
         // unify inputs
         self.type_env.unify(input_ty, lhs_ty)
-            .binop_err_loc(op.clone(), lhs.type_defining_location())?;
+            .binop_err_ctx(op.clone(), lhs.type_defining_location())?;
 
         self.type_env.unify(input_ty, rhs_ty)
-            .binop_err_loc(op.clone(), rhs.type_defining_location())?;
+            .binop_err_ctx(op.clone(), rhs.type_defining_location())?;
 
         Ok(TypedExpression::Binary {
             lhs: Box::new(lhs),
@@ -272,7 +163,7 @@ impl SemanticAnalyzer {
         let result_type = callee.type_().function_return_type();
         let call_type = self.type_env.get_function(argument_types, result_type);
         self.type_env.unify(callee.type_(), call_type)
-            .err_loc(&location)?;
+            .err_ctx(&location)?;
 
         Ok(TypedExpression::Call {
             callee: Box::new(callee),
@@ -312,7 +203,7 @@ impl SemanticAnalyzer {
 
         // add a unification constraint
         self.type_env.unify(expected_type.clone(), operand.type_().clone())
-            .err_loc(&location)?;
+            .err_ctx(&location)?;
 
         Ok(TypedExpression::Unary {
             op: op.clone(),
@@ -329,7 +220,7 @@ impl SemanticAnalyzer {
     ) -> Result<TypedExpression, Error> {
         let (decl, scope_distance) = self.env
             .get_definition(&name.lexeme)
-            .err_loc(&location)?;
+            .err_ctx(&location)?;
         Ok(TypedExpression::Variable {
             name: name.clone(),
             decl,
@@ -392,7 +283,7 @@ impl SemanticAnalyzer {
     fn analyze_parameter(&mut self, param: &Parameter) -> Result<Rc<TypedDeclaration>, Error> {
         let type_ = self.analyze_type_ascription(&param.ascription)?;
         self.env.declare(&param.name.lexeme, type_)
-            .err_loc(&param.location())?;
+            .err_ctx(&param.location())?;
 
         let result = Rc::new(TypedDeclaration::Parameter {
             name: param.name.clone(),
@@ -427,7 +318,7 @@ impl SemanticAnalyzer {
 
         // declare the function
         self.env.declare(&name.lexeme, fun_type)
-            .err_loc(&location)?;
+            .err_ctx(&location)?;
 
         // enter function scope
         let result = self.with_new_scope(|slf| {
@@ -442,7 +333,7 @@ impl SemanticAnalyzer {
 
             // check return type against body
             slf.type_env.unify(return_type, body.type_())
-                .mismatch_loc(
+                .type_mismatch_err_ctx(
                     untyped_return_type.location(),
                     body.type_defining_location()
                 )?;
@@ -490,11 +381,11 @@ impl SemanticAnalyzer {
         let expected_ty = self.analyze_type_ascription(ascription)?;
         self.env
             .declare(&name.lexeme, expected_ty)
-            .err_loc(&location)?;
+            .err_ctx(&location)?;
         let typed_initializer = self.analyze_expression(&initializer)?;
 
         self.type_env.unify(expected_ty, typed_initializer.type_())
-            .err_loc(&location)?;
+            .err_ctx(&location)?;
 
         let decl = Rc::new(TypedDeclaration::Variable{
             name: name.clone(),

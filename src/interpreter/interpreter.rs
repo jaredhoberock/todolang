@@ -1,6 +1,6 @@
 use crate::ast::typed::*;
 use crate::source_location::SourceSpan;
-use crate::token::{Token, TokenKind};
+use crate::token::Token;
 use crate::types::Type;
 use super::environment::*;
 use std::cell::RefCell;

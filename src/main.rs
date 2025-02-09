@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use todolang::analysis::analyze_module;
 use todolang::diagnostics::*;
 use todolang::interpreter::Interpreter;

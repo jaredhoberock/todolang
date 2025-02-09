@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 codespan-reporting = "0.11.1"
+derive_more = "0.99"
 internment = "0.7.0"
 restore_macros = { path = "./restore_macros" }
 thiserror = "1"
