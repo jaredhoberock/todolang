@@ -50,6 +50,19 @@ impl Type {
         matches!(**self, Kind::Bool)
     }
 
+    pub fn is_concrete(&self) -> bool {
+        match **self {
+            Kind::InferenceVariable(_) => false,
+            Kind::Function(ref params, ref ret) => {
+                let params_are_concrete = params
+                    .iter()
+                    .all(|p| p.is_concrete());
+                params_are_concrete && ret.is_concrete()
+            },
+            _ => true,
+        }
+    }
+
     pub fn is_function(&self) -> bool {
         matches!(**self, Kind::Function(_,_))
     }
