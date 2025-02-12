@@ -5,19 +5,23 @@ use codespan_reporting::term::termcolor::Buffer;
 use codespan_reporting::term::{emit, Config};
 use crate::analysis::Error as AnalysisError;
 use miette::Diagnostic as MietteDiagnostic;
+use miette::*;
 
 // this renders a miette diagnostic natively
 // it looks nicer in some ways, worse in some ways
-//fn format_miette_diagnostic(error: AnalysisError, filename: &str, source: &str) -> String {
-//    let named_source = NamedSource::new(filename.to_owned(), source.to_owned());
-//    let report = Report::new(error)
-//        .with_source_code(named_source);
-//    let mut output = String::new();
-//    GraphicalReportHandler::new()
-//        .render_report(&mut output, &*report)
-//        .expect("Failed to render report");
-//    output
-//}
+fn _format_miette_diagnostic(error: AnalysisError, filename: &str, source: &str) -> String {
+    let mut theme = GraphicalTheme::unicode();
+    theme.characters.error = "error:".to_string();
+
+    let named_source = NamedSource::new(filename.to_owned(), source.to_owned());
+    let report = Report::new(error)
+        .with_source_code(named_source);
+    let mut output = String::new();
+    GraphicalReportHandler::new_themed(theme)
+        .render_report(&mut output, &*report)
+        .expect("Failed to render report");
+    output
+}
 
 fn location_of_miette_diagnostic(diag: &impl MietteDiagnostic) -> Option<std::ops::Range<usize>> {
     let mut first_secondary = None;

@@ -92,7 +92,7 @@ impl Interpreter {
 
     fn interpret_declaration(&mut self, decl: Rc<Declaration>) -> Result<(),Error> {
         match &*decl {
-            Declaration::Function{ name, parameters, body, type_, location } => {
+            Declaration::Function{ name, parameters, body, type_, location, .. } => {
                 self.interpret_function_declaration(
                     &decl,
                     &name,

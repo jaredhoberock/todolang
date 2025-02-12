@@ -104,12 +104,18 @@ impl Expression {
 pub enum Declaration {
     Function {
         name: Token,
+        type_parameters: Vec<Rc<Self>>,
         parameters: Vec<Rc<Self>>,
         body: Expression,
         type_: Type,
         location: SourceSpan,
     },
     Parameter {
+        name: Token,
+        type_: Type,
+        location: SourceSpan,
+    },
+    TypeParameter {
         name: Token,
         type_: Type,
         location: SourceSpan,
@@ -127,6 +133,7 @@ impl Declaration {
         match &self {
             Self::Function { location, .. }
             | Self::Parameter { location, .. }
+            | Self::TypeParameter { location, .. }
             | Self::Variable { location, .. }
             => location.clone()
         }
@@ -136,6 +143,7 @@ impl Declaration {
         match self {
             Self::Function { name, .. } => &name,
             Self::Parameter { name, .. } => &name,
+            Self::TypeParameter { name, .. } => &name,
             Self::Variable { name, .. } => &name,
         }
     }
@@ -144,6 +152,7 @@ impl Declaration {
         match self {
             Declaration::Function { type_, .. }  => type_.clone(),
             Declaration::Parameter { type_, .. } => type_.clone(),
+            Declaration::TypeParameter { type_, .. } => type_.clone(),
             Declaration::Variable { type_, .. }  => type_.clone(),
         }
     }

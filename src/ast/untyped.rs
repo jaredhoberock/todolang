@@ -172,6 +172,17 @@ impl TypeAscription {
 }
 
 #[derive(Debug)]
+pub struct TypeParameter {
+    pub name: Token,
+}
+
+impl TypeParameter {
+    pub fn location(&self) -> SourceSpan {
+        self.name.location.clone()
+    }
+}
+
+#[derive(Debug)]
 pub struct Parameter {
     pub name: Token,
     pub ascription: TypeAscription,
@@ -187,6 +198,7 @@ impl Parameter {
 pub enum Declaration {
     Function {
         name: Token,
+        type_parameters: Vec<TypeParameter>,
         parameters: Vec<Parameter>,
         return_type: TypeExpression,
         body: Expression,

@@ -80,15 +80,6 @@ impl TypeEnvironment {
         self.arena.unit()
     }
 
-    pub fn lookup_type(&self, name: &str) -> Option<Type> {
-        match name {
-            "Number" => Some(self.get_number()),
-            "String" => Some(self.get_string()),
-            "Bool"   => Some(self.get_bool()),
-            _        => None, // no user-defined types yet
-        }
-    }
-
     pub fn unify(&mut self, t1: Type, t2: Type) -> Result<(), Error> {
         unify(t1, t2, &mut self.substitution)
     }

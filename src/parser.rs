@@ -517,6 +517,33 @@ impl<'a> Parser<'a> {
         Ok(TypeExpression{ identifier: self.identifier()? })
     }
 
+    // type_parameter := identifier
+    #[restore_state_on_err]
+    fn type_parameter(&mut self) -> Result<TypeParameter, ParseError> {
+        Ok(TypeParameter { name: self.identifier()? })
+    }
+
+    // type_parameter_list := "<" type_parameter ( "," type_parameter)* ">"
+    #[restore_state_on_err]
+    fn type_parameters(&mut self) -> Result<Vec<TypeParameter>, ParseError> {
+        let _langle = self.token(TokenKind::Less)
+            .map_err(ParseError::format_message("{} before type parameter list"))?;
+
+        let mut type_parameters = vec![self.type_parameter()?];
+
+        while self.token(TokenKind::Comma).is_ok() {
+            let param = self
+                .type_parameter()
+                .map_err(ParseError::format_message("{} in type parameter list"))?;
+            type_parameters.push(param);
+        }
+
+        let _rangle = self.token(TokenKind::Greater)
+            .map_err(ParseError::format_message("{} after type parameter list"))?;
+
+        Ok(type_parameters)
+    }
+
     // parameter := identifier type_ascription
     #[restore_state_on_err]
     fn parameter(&mut self) -> Result<Parameter, ParseError> {
@@ -538,13 +565,19 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    // function_declaration := "fun" identifier "(" parameters? ")" "->" type_expression expression
+    // function_declaration := "fun" identifier type_parameter_list? "(" parameters? ")" "->" type_expression expression
     #[restore_state_on_err]
     fn function_declaration(&mut self) -> Result<Declaration, ParseError> {
         let _fun = self
             .token(TokenKind::Fun)
             .map_err(ParseError::format_message("{} before function name"))?;
         let name = self.identifier()?;
+
+        let mut type_parameters = Vec::new();
+        if let Ok(type_params) = self.type_parameters() {
+            type_parameters = type_params;
+        }
+
         let _lparen = self.token(TokenKind::LeftParen)?;
 
         let mut parameters = Vec::new();
@@ -559,6 +592,7 @@ impl<'a> Parser<'a> {
 
         Ok(Declaration::Function {
             name,
+            type_parameters,
             parameters,
             return_type,
             body,

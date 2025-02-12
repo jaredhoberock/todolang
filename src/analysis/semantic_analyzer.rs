@@ -13,13 +13,19 @@ use super::errors::*;
 use std::rc::Rc;
 
 struct SemanticAnalyzer {
-    env: Environment,
     type_env: TypeEnvironment,
+    env: Environment,
 }
 
 impl SemanticAnalyzer {
     pub fn new() -> Self {
-        Self { env: Environment::new(), type_env: TypeEnvironment::new(), }
+        let type_env = TypeEnvironment::new();
+        let builtin_types = vec![
+            ("Bool", type_env.get_bool()),
+            ("Number", type_env.get_number()),
+            ("String", type_env.get_string()),
+        ];
+        Self { type_env, env: Environment::new_with_builtin_types(builtin_types), }
     }
 
     // this wraps the invocation of f(self) in a new scope
@@ -219,7 +225,7 @@ impl SemanticAnalyzer {
         location: SourceSpan
     ) -> Result<TypedExpression, Error> {
         let (decl, scope_distance) = self.env
-            .get_definition(&name.lexeme)
+            .get_variable(&name.lexeme)
             .err_ctx(&location)?;
         Ok(TypedExpression::Variable {
             name: name.clone(),
@@ -230,12 +236,8 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_type_expression(&mut self, expr: &TypeExpression) -> Result<Type, Error> {
-        self.type_env
-            .lookup_type(&expr.identifier.lexeme)
-            .ok_or_else(|| { Error::general(
-                format!("Unknown type: '{}'", &expr.identifier.lexeme),
-                &expr.location()
-            )})
+        self.env.get_type(&expr.identifier.lexeme)
+            .err_ctx(&expr.location())
     }
 
     fn analyze_type_ascription(&mut self, ascription: &TypeAscription) -> Result<Type, Error> {
@@ -260,9 +262,10 @@ impl SemanticAnalyzer {
 
     fn analyze_declaration(&mut self, decl: &Declaration) -> Result<Rc<TypedDeclaration>, Error> {
         match decl {
-            Declaration::Function { name, parameters, return_type, body } => {
+            Declaration::Function { name, type_parameters, parameters, return_type, body, } => {
                 self.analyze_function_declaration(
                     name, 
+                    type_parameters,
                     parameters, 
                     return_type,
                     body,
@@ -280,6 +283,24 @@ impl SemanticAnalyzer {
         }
     }
 
+    fn analyze_type_parameter(&mut self, param: &TypeParameter) -> Result<Rc<TypedDeclaration>, Error> {
+        // create a fresh inference variable
+        let type_ = self.type_env.fresh();
+
+        // declare the type parameter
+        self.env.declare(&param.name.lexeme, type_)
+            .err_ctx(&param.location())?;
+
+        let result = Rc::new(TypedDeclaration::TypeParameter {
+            name: param.name.clone(),
+            type_,
+            location: param.location(),
+        });
+
+        self.env.define(&param.name.lexeme, result.clone().into());
+        Ok(result)
+    }
+
     fn analyze_parameter(&mut self, param: &Parameter) -> Result<Rc<TypedDeclaration>, Error> {
         let type_ = self.analyze_type_ascription(&param.ascription)?;
         self.env.declare(&param.name.lexeme, type_)
@@ -291,37 +312,45 @@ impl SemanticAnalyzer {
             location: param.location(),
         });
 
-        self.env.define(&param.name.lexeme, result.clone());
+        self.env.define(&param.name.lexeme, result.clone().into());
         Ok(result)
     }
 
     fn analyze_function_declaration(
         &mut self, 
         name: &Token, 
+        untyped_type_parameters: &Vec<TypeParameter>,
         untyped_parameters: &Vec<Parameter>, 
         untyped_return_type: &TypeExpression,
         untyped_body: &Expression, 
         location: SourceSpan) -> Result<Rc<TypedDeclaration>, Error>
     {
-        // analyze parameter type ascriptions
-        let mut param_types = Vec::new();
-        for p in untyped_parameters {
-            let ty = self.analyze_type_ascription(&p.ascription)?;
-            param_types.push(ty);
-        }
-
-        // analyze return type
-        let return_type = self.analyze_type_expression(&untyped_return_type)?;
-
-        // build the function type
-        let fun_type = self.type_env.get_function(param_types, return_type);
-
-        // declare the function
-        self.env.declare(&name.lexeme, fun_type)
-            .err_ctx(&location)?;
-
         // enter function scope
         let result = self.with_new_scope(|slf| {
+            // analyze type parameters
+            let mut type_parameters = Vec::new();
+            for p in untyped_type_parameters {
+                let typed_p = slf.analyze_type_parameter(&p)?;
+                type_parameters.push(typed_p);
+            }
+
+            // analyze parameter type ascriptions
+            let mut param_types = Vec::new();
+            for p in untyped_parameters {
+                let ty = slf.analyze_type_ascription(&p.ascription)?;
+                param_types.push(ty);
+            }
+
+            // analyze return type
+            let return_type = slf.analyze_type_expression(&untyped_return_type)?;
+
+            // build the function type
+            let fun_type = slf.type_env.get_function(param_types, return_type);
+
+            // declare the function in the enclosing scope
+            slf.env.declare_in_enclosing_scope(&name.lexeme, fun_type)
+                .err_ctx(&location)?;
+
             // analyze parameters
             let mut parameters = Vec::new();
             for param in untyped_parameters {
@@ -340,6 +369,7 @@ impl SemanticAnalyzer {
 
             Ok(Rc::new(TypedDeclaration::Function {
                 name: name.clone(),
+                type_parameters,
                 parameters,
                 body,
                 type_: fun_type,
@@ -348,7 +378,7 @@ impl SemanticAnalyzer {
         });
 
         if let Ok(typed_decl) = &result {
-          self.env.define(&name.lexeme, typed_decl.clone());
+          self.env.define(&name.lexeme, typed_decl.clone().into());
         }
 
         result
@@ -394,7 +424,7 @@ impl SemanticAnalyzer {
             location
         });
 
-        self.env.define(&name.lexeme, decl.clone());
+        self.env.define(&name.lexeme, decl.clone().into());
         Ok(decl)
     }
 

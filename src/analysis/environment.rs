@@ -17,9 +17,56 @@ impl Error {
 }
 
 #[derive(Debug, Clone)]
+pub enum Definition {
+    // An program-defined entity with a declaration in the AST
+    Ast(Rc<Declaration>),
+    // A built-in entity such as a primitive type
+    Builtin(Type),
+}
+
+impl From<Rc<Declaration>> for Definition {
+    fn from(decl: Rc<Declaration>) -> Self {
+        Definition::Ast(decl)
+    }
+}
+
+impl From<Type> for Definition {
+    fn from(ty: Type) -> Self {
+        Definition::Builtin(ty)
+    }
+}
+
+impl Definition {
+    pub fn as_type(&self) -> Option<Type> {
+        match self {
+            Definition::Builtin(ty) => Some(ty.clone()),
+            Definition::Ast(decl) => match decl.as_ref() {
+                Declaration::TypeParameter { type_, .. } => Some(type_.clone()),
+                _ => None,
+            }
+        }
+    }
+
+    pub fn as_variable(&self) -> Option<Rc<Declaration>> {
+        match self {
+            Definition::Ast(decl) => match decl.as_ref() {
+                Declaration::Function { .. }
+                | Declaration::Parameter { .. }
+                | Declaration::Variable { .. } => Some(decl.clone()),
+                _ => None,
+            },
+            // For now, the only kinds of builtin definitions are Types, not values
+            Definition::Builtin(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Entry {
+    // an entry in the environment is either a declaration with a (possibly-tentative) Type,
     Declared(Type),
-    Defined(Rc<Declaration>),
+    // or an entry is defined with a definition
+    Defined(Definition),
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +77,17 @@ pub struct Environment {
 impl Environment {
     pub fn new() -> Self {
         Self{ scopes: vec![HashMap::new()], }
+    }
+
+    pub fn new_with_builtin_types(types: Vec<(&str, Type)>) -> Self {
+        let mut env = Environment::new();
+        for (name, ty) in types {
+            // XXX the declaration for name should actually be a type type
+            //     i.e., the type of the `String` type is `type`, not `String`
+            env.declare(name, ty.clone()).ok();
+            env.define(name, Definition::Builtin(ty));
+        }
+        env
     }
 
     pub fn enter_scope(&mut self) {
@@ -57,8 +115,19 @@ impl Environment {
             .insert(name.into(), Entry::Declared(ty));
         Ok(())
     }
+
+    pub fn declare_in_enclosing_scope(&mut self, name: &str, ty: Type) -> Result<(), Error> {
+        let enclosing_scope_idx = self.scopes.len() - 2;
+        let enclosing_scope = self.scopes.get_mut(enclosing_scope_idx)
+            .expect("Internal compiler error: no enclosing scope exists");
+        if enclosing_scope.contains_key(name) {
+            return Err(Error::name(format!("'{}' is already declared in this scope", name)));
+        }
+        enclosing_scope.insert(name.into(), Entry::Declared(ty));
+        Ok(())
+    }
     
-    pub fn define(&mut self, name: &str, decl: Rc<Declaration>) {
+    pub fn define(&mut self, name: &str, decl: Definition) {
         let scope = self.scopes.last_mut().unwrap();
 
         match scope.get(name) {
@@ -93,12 +162,26 @@ impl Environment {
 
     /// Returns the definition for a name along with the scope distance.
     /// The returned tuple contains the defined Declaration and the scope distance.
-    pub fn get_definition(&self, name: &str) -> Result<(Rc<Declaration>, usize), Error> {
+    fn get_definition(&self, name: &str) -> Result<(Definition, usize), Error> {
         match self.lookup_with_distance(name)? {
             (Entry::Defined(def), distance) => Ok((def.clone(), distance)),
             (Entry::Declared(_), _) => {
                 panic!("Internal compiler error: declaration '{}' has no definition", name);
             },
         }
+    }
+
+    /// Returns the definition of a named variable along with the scope distance.
+    pub fn get_variable(&self, name: &str) -> Result<(Rc<Declaration>, usize), Error> {
+        let (def, scope_distance) = self.get_definition(name)?;
+        def.as_variable()
+            .map(|decl| (decl, scope_distance))
+            .ok_or_else(|| Error::name(format!("'{}' does not name a variable", name)))
+    }
+
+    /// Looks up a type by name
+    pub fn get_type(&self, name: &str) -> Result<Type, Error> {
+        let (def, _scope_distance) = self.get_definition(name)?;
+        def.as_type().ok_or_else(|| Error::name(format!("'{}' does not name a type", name)))
     }
 }
