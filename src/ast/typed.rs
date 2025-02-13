@@ -52,6 +52,7 @@ pub enum Expression {
     Variable {
         name: Token,
         decl: Rc<Declaration>,
+        type_: Type,
         scope_distance: usize,
         location: SourceSpan,
     },
@@ -65,7 +66,7 @@ impl Expression {
             Self::Call{ type_, .. } => type_.clone(),
             Self::Literal(lit) => lit.type_.clone(),
             Self::Unary {type_, .. } => type_.clone(),
-            Self::Variable{ decl, .. } => decl.type_(),
+            Self::Variable{ type_, .. } => type_.clone(),
         }
     }
 

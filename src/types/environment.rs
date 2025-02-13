@@ -8,38 +8,88 @@ pub struct Error {
     pub found: Type,
 }
 
+// Helper function to try unifying when one side is an inference variable.
+// If `var_type` is an inference variable, it handles the three cases:
+// - Unbound: bind it to the other type.
+// - Generic: succeed only if the other type is the same generic variable.
+// - Link: follow the link and unify recursively.
+// Returns Some(Ok(())) or Some(Err(...)) if `var_type` is an inference variable;
+// otherwise, returns None.
+fn try_unify_inference_variable(var_type: &Type, other: &Type, subst: &mut Substitution) -> Option<Result<(), Error>> {
+    if let Kind::InferenceVariable(ref tv) = **var_type {
+        match tv {
+            TypeVar::Unbound(id) => {
+                // Optionally, you might perform an occurs-check here.
+                subst.insert(*id, other.clone());
+                return Some(Ok(()));
+            },
+            TypeVar::Generic(id1) => {
+                // Only allow unification if the other type is an identical generic.
+                if let Kind::InferenceVariable(TypeVar::Generic(id2)) = &**other {
+                    if id1 == id2 {
+                        return Some(Ok(()));
+                    }
+                }
+                return Some(Err(Error { expected: var_type.clone(), found: other.clone() }));
+            },
+            TypeVar::Link(t) => {
+                return Some(unify(t.clone(), other.clone(), subst));
+            },
+        }
+    }
+    None
+}
+
 fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Error> {
-    // apply the current substitution to both types
+    // Normalize both types by applying the current substitution.
     let expected = expected.apply(subst);
     let found = found.apply(subst);
 
+    // Early check: if the normalized types are equal, unification succeeds.
+    if expected == found {
+        return Ok(());
+    }
+
+    // Try handling if either side is an inference variable.
+    if let Some(result) = try_unify_inference_variable(&expected, &found, subst) {
+        return result;
+    }
+    if let Some(result) = try_unify_inference_variable(&found, &expected, subst) {
+        return result;
+    }
+
+    // Handle function types.
     match (&*expected, &*found) {
-        // If the expected type is an inference variable, record a binding.
-        (Kind::InferenceVariable(id), _) => {
-            subst.insert(*id, found);
-            Ok(())
-        },
-        // If the found type is an inference variable, record a binding.
-        (_, Kind::InferenceVariable(id)) => {
-            subst.insert(*id, expected);
-            Ok(())
-        },
-        // For function types, both must be functions with the same number of parameters
         (Kind::Function(params1, ret1), Kind::Function(params2, ret2)) => {
             if params1.len() != params2.len() {
                 return Err(Error { expected, found });
             }
-            // Unify each parameter pair
             for (p1, p2) in params1.iter().zip(params2.iter()) {
                 unify(p1.clone(), p2.clone(), subst)?;
             }
-            // Unify the return types
             unify(ret1.clone(), ret2.clone(), subst)
         },
-        // If both types are concrete and equal, unification succeeds.
-        _ if expected == found => Ok(()),
-        // Otherwise, the types do not unify
+        // Catch-all: if no other pattern matched, the types don't unify.
         _ => Err(Error { expected, found }),
+    }
+}
+
+fn instantiate(env: &TypeEnvironment, t: Type) -> Type {
+    match &*t {
+        Kind::InferenceVariable(ref var) => match var {
+            // If t is an inference variable and it's generic,
+            // replace it with a fresh (unbound) variable
+            TypeVar::Generic(_) => env.fresh(),
+            _ => t,
+        },
+        // For function types, recursively instantiate the parameters and return type
+        Kind::Function(ref params, ref ret) => {
+            let new_params = params.iter().map(|p| instantiate(env, *p)).collect();
+            let new_ret = instantiate(env, *ret);
+            env.get_function(new_params, new_ret)
+        },
+        // For all other types, just return t
+        _ => t,
     }
 }
 
@@ -58,6 +108,10 @@ impl TypeEnvironment {
 
     pub fn fresh(&self) -> Type {
         self.arena.fresh()
+    }
+
+    pub fn generic(&self) -> Type {
+        self.arena.generic()
     }
 
     pub fn get_bool(&self) -> Type {
@@ -84,7 +138,16 @@ impl TypeEnvironment {
         unify(t1, t2, &mut self.substitution)
     }
 
+    pub fn instantiate_and_unify(&mut self, polymorphic_t1: Type, t2: Type) -> Result<(), Error> {
+        let t1 = self.instantiate(polymorphic_t1);
+        return self.unify(t1, t2)
+    }
+
     pub fn apply(&self, t: &Type) -> Type {
         t.apply(&self.substitution)
+    }
+
+    pub fn instantiate(&self, t: Type) -> Type {
+        instantiate(self, t)
     }
 }

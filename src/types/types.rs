@@ -5,10 +5,20 @@ use std::fmt;
 use std::ops::Deref;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
+pub enum TypeVar {
+    /// An unbound inference variable that can later be unified.
+    Unbound(usize),
+    /// A linked variable, where unification has determined it must be another type.
+    Link(Type),
+    /// A generic (rigid) variable that represents a universally quantified type.
+    Generic(usize),
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
     Bool,
     Function(Vec<Type>, Type),
-    InferenceVariable(usize),
+    InferenceVariable(TypeVar),
     Number,
     String,
     Unit,
@@ -25,12 +35,19 @@ impl Type {
     /// Recursively replaces any inference variable with their bindings from the substitution.
     pub fn apply(&self, subst: &Substitution) -> Type {
         match **self {
-            Kind::InferenceVariable(id) => {
-                if let Some(t) = subst.get(&id) {
-                    // recursively apply when substitution maps to another variable
-                    t.apply(subst)
-                } else {
-                    self.clone()
+            Kind::InferenceVariable(ref var) => {
+                match var {
+                    TypeVar::Unbound(id) => {
+                        if let Some(t) = subst.get(id) {
+                            // Recursively apply substitution if necessary.
+                            t.apply(subst)
+                        } else {
+                            self.clone()
+                        }
+                    },
+                    TypeVar::Link(ref t) => t.apply(subst),
+                    // Generic variables are rigid; leave them as-is
+                    TypeVar::Generic(_) => self.clone(),
                 }
             },
             Kind::Function(ref params, ref ret) => {
@@ -101,7 +118,11 @@ impl fmt::Display for Type {
                 }
                 write!(f, ") -> {}", result)
             },
-            Kind::InferenceVariable(id) => write!(f, "T{}", id),
+            Kind::InferenceVariable(var) => match var {
+                TypeVar::Unbound(id) => write!(f, "T{}", id),
+                TypeVar::Generic(id) => write!(f, "G{}", id),
+                TypeVar::Link(t) => write!(f, "{}", t),
+            },
             Kind::Unit => write!(f, "()"),
         }
     }
@@ -119,7 +140,13 @@ impl TypeArena {
     pub fn fresh(&self) -> Type {
         let id = self.counter.get();
         self.counter.set(id + 1);
-        Type(Intern::new(Kind::InferenceVariable(id)))
+        Type(Intern::new(Kind::InferenceVariable(TypeVar::Unbound(id))))
+    }
+
+    pub fn generic(&self) -> Type {
+        let id = self.counter.get();
+        self.counter.set(id + 1);
+        Type(Intern::new(Kind::InferenceVariable(TypeVar::Generic(id))))
     }
 
     pub fn bool(&self) -> Type {
@@ -140,9 +167,5 @@ impl TypeArena {
 
     pub fn unit(&self) -> Type {
         Type(Intern::new(Kind::Unit))
-    }
-
-    pub fn unknown(&self) -> Type {
-        self.fresh()
     }
 }

@@ -227,9 +227,14 @@ impl SemanticAnalyzer {
         let (decl, scope_distance) = self.env
             .get_variable(&name.lexeme)
             .err_ctx(&location)?;
+
+        // instantiate the variable's type
+        let type_ = self.type_env.instantiate(decl.type_());
+
         Ok(TypedExpression::Variable {
             name: name.clone(),
             decl,
+            type_,
             scope_distance,
             location,
         })
@@ -284,8 +289,8 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_type_parameter(&mut self, param: &TypeParameter) -> Result<Rc<TypedDeclaration>, Error> {
-        // create a fresh inference variable
-        let type_ = self.type_env.fresh();
+        // create a generic (universally quantified) variable
+        let type_ = self.type_env.generic();
 
         // declare the type parameter
         self.env.declare(&param.name.lexeme, type_)
@@ -333,13 +338,17 @@ impl SemanticAnalyzer {
                 let typed_p = slf.analyze_type_parameter(&p)?;
                 type_parameters.push(typed_p);
             }
-
-            // analyze parameter type ascriptions
-            let mut param_types = Vec::new();
-            for p in untyped_parameters {
-                let ty = slf.analyze_type_ascription(&p.ascription)?;
-                param_types.push(ty);
+            
+            // analyze parameters
+            let mut parameters = Vec::new();
+            for param in untyped_parameters {
+                parameters.push(slf.analyze_parameter(&param)?);
             }
+
+            // get parameter types
+            let param_types = parameters.iter()
+                .map(|p| p.as_ref().type_())
+                .collect();
 
             // analyze return type
             let return_type = slf.analyze_type_expression(&untyped_return_type)?;
@@ -351,21 +360,18 @@ impl SemanticAnalyzer {
             slf.env.declare_in_enclosing_scope(&name.lexeme, fun_type)
                 .err_ctx(&location)?;
 
-            // analyze parameters
-            let mut parameters = Vec::new();
-            for param in untyped_parameters {
-                parameters.push(slf.analyze_parameter(&param)?);
-            };
-
             // analyze body
             let body = slf.analyze_expression(&untyped_body)?;
 
-            // check return type against body
-            slf.type_env.unify(return_type, body.type_())
+            // check the polymoprhic return type against the body
+            slf.type_env.instantiate_and_unify(return_type, body.type_())
                 .type_mismatch_err_ctx(
                     untyped_return_type.location(),
                     body.type_defining_location()
                 )?;
+
+            // XXX we would solve constraints here
+            // slf.constraint_env.solve_constraints(...)
 
             Ok(Rc::new(TypedDeclaration::Function {
                 name: name.clone(),

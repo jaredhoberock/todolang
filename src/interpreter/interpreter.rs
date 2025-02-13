@@ -191,12 +191,11 @@ impl Interpreter {
                     &location
                 )
             },
-            Expression::Variable{ name, decl, location, scope_distance } => {
+            Expression::Variable{ name, scope_distance, location, .. } => {
                 self.interpret_variable_expression(
                     &name,
-                    &decl,
                     *scope_distance,
-                    &location
+                    &location,
                 )
             }
         }
@@ -291,9 +290,8 @@ impl Interpreter {
     fn interpret_variable_expression(
         &mut self,
         name: &Token, 
-        _decl: &Rc<Declaration>, 
         scope_distance: usize, 
-        location: &SourceSpan
+        location: &SourceSpan,
     ) -> Result<Value,Error> {
         self.env.get_at(scope_distance, &name.lexeme)
             .err_loc(&location)
