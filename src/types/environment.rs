@@ -33,9 +33,6 @@ fn try_unify_inference_variable(var_type: &Type, other: &Type, subst: &mut Subst
                 }
                 return Some(Err(Error { expected: var_type.clone(), found: other.clone() }));
             },
-            TypeVar::Link(t) => {
-                return Some(unify(t.clone(), other.clone(), subst));
-            },
         }
     }
     None

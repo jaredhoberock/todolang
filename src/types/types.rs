@@ -8,10 +8,17 @@ use std::ops::Deref;
 pub enum TypeVar {
     /// An unbound inference variable that can later be unified.
     Unbound(usize),
-    /// A linked variable, where unification has determined it must be another type.
-    Link(Type),
     /// A generic (rigid) variable that represents a universally quantified type.
     Generic(usize),
+}
+
+impl TypeVar {
+    pub fn id(&self) -> usize {
+        match &self {
+            Self::Unbound(id) => *id,
+            Self::Generic(id) => *id,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -45,7 +52,6 @@ impl Type {
                             self.clone()
                         }
                     },
-                    TypeVar::Link(ref t) => t.apply(subst),
                     // Generic variables are rigid; leave them as-is
                     TypeVar::Generic(_) => self.clone(),
                 }
@@ -121,7 +127,6 @@ impl fmt::Display for Type {
             Kind::InferenceVariable(var) => match var {
                 TypeVar::Unbound(id) => write!(f, "T{}", id),
                 TypeVar::Generic(id) => write!(f, "G{}", id),
-                TypeVar::Link(t) => write!(f, "{}", t),
             },
             Kind::Unit => write!(f, "()"),
         }
