@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use super::types::*;
 use thiserror::Error;
 
@@ -74,18 +75,46 @@ fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Er
     }
 }
 
-fn instantiate(env: &TypeEnvironment, t: Type) -> Type {
+/// Instantiates a polymorphic type by replacing each generic type variable with a fresh inference variable.
+///
+/// Traverses the type `t` and for each `TypeVar::Generic`, generates a fresh variable via `env.fresh()`
+/// (wrapped as a `Type`) and records the mapping from the generic ID to the fresh type.
+/// 
+/// # Parameters
+/// - `env`: The type environment used for generating fresh variables.
+/// - `t`: The polymorphic type to instantiate.
+/// 
+/// # Returns
+/// - The monomorphic type of `t` with generics replaced with fresh inference variables.
+/// - `mapping` is a `HashMap<usize, Type>` mapping each generic variable's ID to its fresh inference variable.
+fn instantiate(
+    env: &TypeEnvironment, 
+    t: Type,
+    mapping: &mut HashMap<usize,Type>
+) -> Type {
     match &*t {
         Kind::InferenceVariable(ref var) => match var {
             // If t is an inference variable and it's generic,
             // replace it with a fresh (unbound) variable
-            TypeVar::Generic(_) => env.fresh(),
+            TypeVar::Generic(id) => {
+                if let Some(mapped_type) = mapping.get(id) {
+                    mapped_type.clone()
+                } else {
+                    let fresh_type = env.fresh();
+                    mapping.insert(*id, fresh_type.clone());
+                    fresh_type
+                }
+            }
+            // For non-generic inference variables, just return t
             _ => t,
         },
         // For function types, recursively instantiate the parameters and return type
         Kind::Function(ref params, ref ret) => {
-            let new_params = params.iter().map(|p| instantiate(env, *p)).collect();
-            let new_ret = instantiate(env, *ret);
+            let new_params = params
+                .iter()
+                .map(|p| instantiate(env, *p, mapping))
+                .collect();
+            let new_ret = instantiate(env, *ret, mapping);
             env.get_function(new_params, new_ret)
         },
         // For all other types, just return t
@@ -148,6 +177,7 @@ impl TypeEnvironment {
     }
 
     pub fn instantiate(&self, t: Type) -> Type {
-        instantiate(self, t)
+        let mut mapping = HashMap::new();
+        instantiate(self, t, &mut mapping)
     }
 }
