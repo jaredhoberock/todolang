@@ -11,7 +11,7 @@ pub struct Error {
 
 // Helper function to try unifying when one side is an inference variable.
 // If `var_type` is an inference variable, it handles the three cases:
-// - Unbound: bind it to the other type.
+// - Monotype: bind it to the other type.
 // - Generic: succeed only if the other type is the same generic variable.
 // - Link: follow the link and unify recursively.
 // Returns Some(Ok(())) or Some(Err(...)) if `var_type` is an inference variable;
@@ -19,7 +19,7 @@ pub struct Error {
 fn try_unify_inference_variable(var_type: &Type, other: &Type, subst: &mut Substitution) -> Option<Result<(), Error>> {
     if let Kind::InferenceVariable(ref tv) = **var_type {
         match tv {
-            TypeVar::Unbound(id) => {
+            TypeVar::Monotype(id) => {
                 // Optionally, you might perform an occurs-check here.
                 subst.insert(*id, other.clone());
                 return Some(Ok(()));
@@ -168,14 +168,33 @@ impl TypeEnvironment {
         t.apply(&self.substitution)
     }
 
-    pub fn instantiate(&self, t: Type) -> (Type, HashMap<usize,Type>) {
+    pub fn instantiate(&self, polytype: Type) -> (Type, Substitution) {
         let mut mapping = HashMap::new();
-        let result = instantiate(self, t, &mut mapping);
+        let result = instantiate(self, polytype, &mut mapping);
         (result, mapping)
     }
 
     pub fn instantiate_and_unify(&mut self, polymorphic_t1: Type, t2: Type) -> Result<(), Error> {
         let (t1,_) = self.instantiate(polymorphic_t1);
         return self.unify(t1, t2)
+    }
+
+    /// This is the dual operation of `instantiate`
+    pub fn generalize(&self, monotype: Type) -> (Type, Substitution) {
+        // find free type variables in the monotype
+        let free_vars = monotype.free_type_vars(&self.substitution);
+
+        // build a mapping from each free variable to a new generic type
+        let mut mapping = HashMap::new();
+        for tv in free_vars {
+            if let TypeVar::Monotype(id) = tv {
+                // generate a new generic type
+                let generic_type = self.generic();
+                mapping.insert(id, generic_type);
+            }
+        }
+
+        let generalized = monotype.apply(&mapping);
+        (generalized, mapping)
     }
 }

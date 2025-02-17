@@ -1,13 +1,13 @@
 use internment::Intern;
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Deref;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TypeVar {
-    /// An unbound inference variable that can later be unified.
-    Unbound(usize),
+    /// An inference variable that can later be unified.
+    Monotype(usize),
     /// A generic (rigid) variable that represents a universally quantified type.
     Generic(usize),
 }
@@ -15,8 +15,32 @@ pub enum TypeVar {
 impl TypeVar {
     pub fn id(&self) -> usize {
         match &self {
-            Self::Unbound(id) => *id,
+            Self::Monotype(id) => *id,
             Self::Generic(id) => *id,
+        }
+    }
+
+    /// Wraps the type variable into a Type as an inference variable
+    pub fn as_type(&self) -> Type {
+        Type(Intern::new(Kind::InferenceVariable(self.clone())))
+    }
+    
+    /// Applies the substitution to this type variable.
+    pub fn apply(&self, subst: &Substitution) -> Type {
+        match self {
+            Self::Monotype(id) => {
+                if let Some(t) = subst.get(id) {
+                    // Recursively apply substitution to the bound type
+                    t.apply(subst)
+                } else {
+                    // No binding found; wrap the variable
+                    self.as_type()
+                }
+            },
+            Self::Generic(_) => {
+                // Generic (rigid) variables are not substituted; wrap them
+                self.as_type()
+            },
         }
     }
 }
@@ -43,18 +67,7 @@ impl Type {
     pub fn apply(&self, subst: &Substitution) -> Type {
         match **self {
             Kind::InferenceVariable(ref var) => {
-                match var {
-                    TypeVar::Unbound(id) => {
-                        if let Some(t) = subst.get(id) {
-                            // Recursively apply substitution if necessary.
-                            t.apply(subst)
-                        } else {
-                            self.clone()
-                        }
-                    },
-                    // Generic variables are rigid; leave them as-is
-                    TypeVar::Generic(_) => self.clone(),
-                }
+                var.apply(&subst)
             },
             Kind::Function(ref params, ref ret) => {
                 let new_params: Vec<Type> = params
@@ -66,6 +79,13 @@ impl Type {
             },
             // for concrete types, no substitution is needed
             _ => self.clone(),
+        }
+    }
+
+    pub fn as_type_var(&self) -> Option<&TypeVar> {
+        match **self {
+            Kind::InferenceVariable(ref tv) => Some(tv),
+            _ => None,
         }
     }
 
@@ -100,6 +120,62 @@ impl Type {
             _ => panic!("Internal compiler error: not a function type"),
         }
     }
+
+    /// Returns `true` if the given type variable `var` occurs anywhere in `self`,
+    /// taking into account any bindings in the substitution `subst`.
+    pub fn occurs(&self, var: &TypeVar, subst: &Substitution) -> bool {
+        match **self {
+            Kind::InferenceVariable(ref v) => {
+                // If it's the same variable, we've found an occurrence.
+                if v == var {
+                    return true;
+                }
+                // For monotypes, check their binding in the substitution.
+                if let TypeVar::Monotype(id) = v {
+                    if let Some(bound_type) = subst.get(id) {
+                        return bound_type.occurs(var, subst);
+                    }
+                }
+                // For Generic variables (or if no binding is found), no occurrence.
+                false
+            },
+            Kind::Function(ref params, ref ret) => {
+                // Check if the variable occurs in any parameter or in the return type.
+                params.iter().any(|p| p.occurs(var, subst)) || ret.occurs(var, subst)
+            },
+            // For all concrete types (Bool, Number, String, Unit), the variable doesn't occur.
+            _ => false,
+        }
+    }
+
+    /// Returns a set of free type variables in this type,
+    /// taking into account the current substitution.
+    pub fn free_type_vars(&self, subst: &Substitution) -> HashSet<TypeVar> {
+        // first apply the substitution to get the "resolved" type
+        let applied = self.apply(subst);
+        let mut free_vars = HashSet::new();
+        applied.collect_free_vars_internal(&mut free_vars);
+        free_vars
+    }
+
+    fn collect_free_vars_internal(&self, free_vars: &mut HashSet<TypeVar>) {
+        match **self {
+            Kind::InferenceVariable(ref tv) => {
+                if let TypeVar::Monotype(_) = tv {
+                    free_vars.insert(tv.clone());
+                }
+                // we ignore TypeVar::Generic because they are already quantified
+            },
+            Kind::Function(ref params, ref ret) => {
+                for param in params {
+                    param.collect_free_vars_internal(free_vars);
+                }
+                ret.collect_free_vars_internal(free_vars);
+            },
+            // Concrete types contain no type variables
+            _ => {}
+        }
+    }
 }
 
 impl Deref for Type {
@@ -125,7 +201,7 @@ impl fmt::Display for Type {
                 write!(f, ") -> {}", result)
             },
             Kind::InferenceVariable(var) => match var {
-                TypeVar::Unbound(id) => write!(f, "T{}", id),
+                TypeVar::Monotype(id) => write!(f, "T{}", id),
                 TypeVar::Generic(id) => write!(f, "G{}", id),
             },
             Kind::Unit => write!(f, "()"),
@@ -145,7 +221,7 @@ impl TypeArena {
     pub fn fresh(&self) -> Type {
         let id = self.counter.get();
         self.counter.set(id + 1);
-        Type(Intern::new(Kind::InferenceVariable(TypeVar::Unbound(id))))
+        Type(Intern::new(Kind::InferenceVariable(TypeVar::Monotype(id))))
     }
 
     pub fn generic(&self) -> Type {
