@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TypeVar {
     /// An unbound inference variable that can later be unified.
     Unbound(usize),
