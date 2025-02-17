@@ -7,7 +7,8 @@ use std::ops::Deref;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TypeVar {
     /// An inference variable that can later be unified.
-    Monotype(usize),
+    /// T
+    Monotype{ id: usize, origin: usize },
     /// A generic (rigid) variable that represents a universally quantified type.
     Generic(usize),
 }
@@ -15,7 +16,7 @@ pub enum TypeVar {
 impl TypeVar {
     pub fn id(&self) -> usize {
         match &self {
-            Self::Monotype(id) => *id,
+            Self::Monotype { id, .. } => *id,
             Self::Generic(id) => *id,
         }
     }
@@ -28,7 +29,7 @@ impl TypeVar {
     /// Applies the substitution to this type variable.
     pub fn apply(&self, subst: &Substitution) -> Type {
         match self {
-            Self::Monotype(id) => {
+            Self::Monotype{ id, .. } => {
                 if let Some(t) = subst.get(id) {
                     // Recursively apply substitution to the bound type
                     t.apply(subst)
@@ -41,6 +42,15 @@ impl TypeVar {
                 // Generic (rigid) variables are not substituted; wrap them
                 self.as_type()
             },
+        }
+    }
+}
+
+impl fmt::Display for TypeVar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TypeVar::Monotype{id, ..} => write!(f, "T{}", id),
+            TypeVar::Generic(id) => write!(f, "G{}", id),
         }
     }
 }
@@ -131,7 +141,7 @@ impl Type {
                     return true;
                 }
                 // For monotypes, check their binding in the substitution.
-                if let TypeVar::Monotype(id) = v {
+                if let TypeVar::Monotype{id,..} = v {
                     if let Some(bound_type) = subst.get(id) {
                         return bound_type.occurs(var, subst);
                     }
@@ -161,7 +171,7 @@ impl Type {
     fn collect_free_vars_internal(&self, free_vars: &mut HashSet<TypeVar>) {
         match **self {
             Kind::InferenceVariable(ref tv) => {
-                if let TypeVar::Monotype(_) = tv {
+                if let TypeVar::Monotype{..} = tv {
                     free_vars.insert(tv.clone());
                 }
                 // we ignore TypeVar::Generic because they are already quantified
@@ -200,10 +210,7 @@ impl fmt::Display for Type {
                 }
                 write!(f, ") -> {}", result)
             },
-            Kind::InferenceVariable(var) => match var {
-                TypeVar::Monotype(id) => write!(f, "T{}", id),
-                TypeVar::Generic(id) => write!(f, "G{}", id),
-            },
+            Kind::InferenceVariable(var) => write!(f, "{}", var),
             Kind::Unit => write!(f, "()"),
         }
     }
@@ -218,10 +225,11 @@ impl TypeArena {
       Self { counter: Cell::new(0) }
     }
 
-    pub fn fresh(&self) -> Type {
+    pub fn fresh_from(&self, origin: usize) -> Type {
         let id = self.counter.get();
         self.counter.set(id + 1);
-        Type(Intern::new(Kind::InferenceVariable(TypeVar::Monotype(id))))
+        let tv = TypeVar::Monotype { id, origin };
+        Type(Intern::new(Kind::InferenceVariable(tv)))
     }
 
     pub fn generic(&self) -> Type {

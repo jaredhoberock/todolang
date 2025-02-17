@@ -19,7 +19,7 @@ pub struct Error {
 fn try_unify_inference_variable(var_type: &Type, other: &Type, subst: &mut Substitution) -> Option<Result<(), Error>> {
     if let Kind::InferenceVariable(ref tv) = **var_type {
         match tv {
-            TypeVar::Monotype(id) => {
+            TypeVar::Monotype { id, .. } => {
                 // Optionally, you might perform an occurs-check here.
                 subst.insert(*id, other.clone());
                 return Some(Ok(()));
@@ -74,7 +74,7 @@ fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Er
 
 /// Instantiates a polymorphic type by replacing each generic type variable with a fresh inference variable.
 ///
-/// Traverses the type `t` and for each `TypeVar::Generic`, generates a fresh variable via `env.fresh()`
+/// Traverses the type `t` and for each `TypeVar::Generic`, generates a fresh variable via `env.fresh_from()`
 /// (wrapped as a `Type`) and records the mapping from the generic ID to the fresh type.
 /// 
 /// # Parameters
@@ -97,7 +97,7 @@ fn instantiate(
                 if let Some(mapped_type) = mapping.get(id) {
                     mapped_type.clone()
                 } else {
-                    let fresh_type = env.fresh();
+                    let fresh_type = env.fresh_from(*id);
                     mapping.insert(*id, fresh_type.clone());
                     fresh_type
                 }
@@ -132,8 +132,8 @@ impl TypeEnvironment {
         }
     }
 
-    pub fn fresh(&self) -> Type {
-        self.arena.fresh()
+    fn fresh_from(&self, origin: usize) -> Type {
+        self.arena.fresh_from(origin)
     }
 
     pub fn generic(&self) -> Type {
@@ -187,7 +187,7 @@ impl TypeEnvironment {
         // build a mapping from each free variable to a new generic type
         let mut mapping = HashMap::new();
         for tv in free_vars {
-            if let TypeVar::Monotype(id) = tv {
+            if let TypeVar::Monotype {id, .. } = tv {
                 // generate a new generic type
                 let generic_type = self.generic();
                 mapping.insert(id, generic_type);
