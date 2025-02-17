@@ -229,7 +229,7 @@ impl SemanticAnalyzer {
             .err_ctx(&location)?;
 
         // instantiate the variable's type
-        let type_ = self.type_env.instantiate(decl.type_());
+        let (type_, _) = self.type_env.instantiate(decl.type_());
 
         Ok(TypedExpression::Variable {
             name: name.clone(),
@@ -299,6 +299,7 @@ impl SemanticAnalyzer {
         let result = Rc::new(TypedDeclaration::TypeParameter {
             name: param.name.clone(),
             type_,
+            constraint: param.constraint.clone(),
             location: param.location(),
         });
 
@@ -363,15 +364,12 @@ impl SemanticAnalyzer {
             // analyze body
             let body = slf.analyze_expression(&untyped_body)?;
 
-            // check the polymoprhic return type against the body
+            // check the polymorphic return type against the body
             slf.type_env.instantiate_and_unify(return_type, body.type_())
                 .type_mismatch_err_ctx(
                     untyped_return_type.location(),
                     body.type_defining_location()
                 )?;
-
-            // XXX we would solve constraints here
-            // slf.constraint_env.solve_constraints(...)
 
             Ok(Rc::new(TypedDeclaration::Function {
                 name: name.clone(),

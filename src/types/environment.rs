@@ -164,17 +164,18 @@ impl TypeEnvironment {
         unify(t1, t2, &mut self.substitution)
     }
 
-    pub fn instantiate_and_unify(&mut self, polymorphic_t1: Type, t2: Type) -> Result<(), Error> {
-        let t1 = self.instantiate(polymorphic_t1);
-        return self.unify(t1, t2)
-    }
-
     pub fn apply(&self, t: &Type) -> Type {
         t.apply(&self.substitution)
     }
 
-    pub fn instantiate(&self, t: Type) -> Type {
+    pub fn instantiate(&self, t: Type) -> (Type, HashMap<usize,Type>) {
         let mut mapping = HashMap::new();
-        instantiate(self, t, &mut mapping)
+        let result = instantiate(self, t, &mut mapping);
+        (result, mapping)
+    }
+
+    pub fn instantiate_and_unify(&mut self, polymorphic_t1: Type, t2: Type) -> Result<(), Error> {
+        let (t1,_) = self.instantiate(polymorphic_t1);
+        return self.unify(t1, t2)
     }
 }
