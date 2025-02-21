@@ -1,0 +1,7 @@
+fun identity<T>(x: T) -> T {
+  x
+}
+
+assert 13 == identity(13);
+
+print "OK";

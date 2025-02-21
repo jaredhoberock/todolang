@@ -1,0 +1,5 @@
+fun foo<T: Add>(x: T) -> T {
+  x + x
+}
+
+print "OK";

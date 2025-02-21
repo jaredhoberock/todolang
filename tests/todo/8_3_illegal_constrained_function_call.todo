@@ -1,0 +1,6 @@
+fun foo<T, U: Add>(y: T, x: U) -> Number {
+  0
+}
+
+// this should fail because a constraint couldn't be solved
+foo(true, true);

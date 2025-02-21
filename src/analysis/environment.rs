@@ -1,5 +1,5 @@
 use crate::ast::typed::Declaration;
-use crate::types::Type;
+use crate::types::{Type, TypeScheme};
 use std::collections::HashMap;
 use std::rc::Rc;
 use thiserror::Error;
@@ -21,7 +21,7 @@ pub enum Definition {
     // An program-defined entity with a declaration in the AST
     Ast(Rc<Declaration>),
     // A built-in entity such as a primitive type
-    Builtin(Type),
+    Builtin(TypeScheme),
 }
 
 impl From<Rc<Declaration>> for Definition {
@@ -30,18 +30,18 @@ impl From<Rc<Declaration>> for Definition {
     }
 }
 
-impl From<Type> for Definition {
-    fn from(ty: Type) -> Self {
+impl From<TypeScheme> for Definition {
+    fn from(ty: TypeScheme) -> Self {
         Definition::Builtin(ty)
     }
 }
 
 impl Definition {
-    pub fn as_type(&self) -> Option<Type> {
+    pub fn as_type_scheme(&self) -> Option<TypeScheme> {
         match self {
             Definition::Builtin(ty) => Some(ty.clone()),
             Definition::Ast(decl) => match decl.as_ref() {
-                Declaration::TypeParameter { type_, .. } => Some(type_.clone()),
+                Declaration::TypeParameter { type_scheme, .. } => Some(type_scheme.clone()),
                 _ => None,
             }
         }
@@ -55,7 +55,7 @@ impl Definition {
                 | Declaration::Variable { .. } => Some(decl.clone()),
                 _ => None,
             },
-            // For now, the only kinds of builtin definitions are Types, not values
+            // For now, the only kinds of builtin definitions are TypeSchemes, not values
             Definition::Builtin(_) => None,
         }
     }
@@ -63,8 +63,8 @@ impl Definition {
 
 #[derive(Debug, Clone)]
 pub enum Entry {
-    // an entry in the environment is either a declaration with a (possibly-tentative) Type,
-    Declared(Type),
+    // an entry in the environment is either a declaration with a (possibly-tentative) TypeScheme,
+    Declared(TypeScheme),
     // or an entry is defined with a definition
     Defined(Definition),
 }
@@ -82,10 +82,11 @@ impl Environment {
     pub fn new_with_builtin_types(types: Vec<(&str, Type)>) -> Self {
         let mut env = Environment::new();
         for (name, ty) in types {
+            let ts = TypeScheme::new_unconstrained(ty);
             // XXX the declaration for name should actually be a type type
             //     i.e., the type of the `String` type is `type`, not `String`
-            env.declare(name, ty.clone()).ok();
-            env.define(name, Definition::Builtin(ty));
+            env.declare(name, ts.clone()).ok();
+            env.define(name, Definition::Builtin(ts));
         }
         env
     }
@@ -107,7 +108,7 @@ impl Environment {
         Ok(())
     }
 
-    pub fn declare(&mut self, name: &str, ty: Type) -> Result<(), Error> {
+    pub fn declare(&mut self, name: &str, ty: TypeScheme) -> Result<(), Error> {
         self.check_unique_name(&name)?;
         self.scopes
             .last_mut()
@@ -116,7 +117,7 @@ impl Environment {
         Ok(())
     }
 
-    pub fn declare_in_enclosing_scope(&mut self, name: &str, ty: Type) -> Result<(), Error> {
+    pub fn declare_in_enclosing_scope(&mut self, name: &str, ty: TypeScheme) -> Result<(), Error> {
         let enclosing_scope_idx = self.scopes.len() - 2;
         let enclosing_scope = self.scopes.get_mut(enclosing_scope_idx)
             .expect("Internal compiler error: no enclosing scope exists");
@@ -179,9 +180,9 @@ impl Environment {
             .ok_or_else(|| Error::name(format!("'{}' does not name a variable", name)))
     }
 
-    /// Looks up a type by name
-    pub fn get_type(&self, name: &str) -> Result<Type, Error> {
+    /// Looks up a type scheme by name
+    pub fn get_type_scheme(&self, name: &str) -> Result<TypeScheme, Error> {
         let (def, _scope_distance) = self.get_definition(name)?;
-        def.as_type().ok_or_else(|| Error::name(format!("'{}' does not name a type", name)))
+        def.as_type_scheme().ok_or_else(|| Error::name(format!("'{}' does not name a type", name)))
     }
 }

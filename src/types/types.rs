@@ -7,7 +7,6 @@ use std::ops::Deref;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TypeVar {
     /// An inference variable that can later be unified.
-    /// T
     Monotype{ id: usize, origin: usize },
     /// A generic (rigid) variable that represents a universally quantified type.
     Generic(usize),
@@ -29,7 +28,8 @@ impl TypeVar {
     /// Applies the substitution to this type variable.
     pub fn apply(&self, subst: &Substitution) -> Type {
         match self {
-            Self::Monotype{ id, .. } => {
+            Self::Monotype{ id, .. }
+            | Self::Generic(id) => {
                 if let Some(t) = subst.get(id) {
                     // Recursively apply substitution to the bound type
                     t.apply(subst)
@@ -37,10 +37,6 @@ impl TypeVar {
                     // No binding found; wrap the variable
                     self.as_type()
                 }
-            },
-            Self::Generic(_) => {
-                // Generic (rigid) variables are not substituted; wrap them
-                self.as_type()
             },
         }
     }
@@ -122,6 +118,13 @@ impl Type {
 
     pub fn is_number(&self) -> bool {
         matches!(**self, Kind::Number)
+    }
+
+    pub fn parameter_types(&self) -> std::slice::Iter<'_,Type> {
+        match **self {
+            Kind::Function(ref params, _) => params.iter(),
+            _ => panic!("Internal compiler error: not a function type"),
+        }
     }
 
     pub fn function_return_type(&self) -> Type {

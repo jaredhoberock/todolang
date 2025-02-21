@@ -9,33 +9,27 @@ pub struct Error {
     pub found: Type,
 }
 
-// Helper function to try unifying when one side is an inference variable.
-// If `var_type` is an inference variable, it handles the three cases:
-// - Monotype: bind it to the other type.
-// - Generic: succeed only if the other type is the same generic variable.
-// - Link: follow the link and unify recursively.
-// Returns Some(Ok(())) or Some(Err(...)) if `var_type` is an inference variable;
-// otherwise, returns None.
-fn try_unify_inference_variable(var_type: &Type, other: &Type, subst: &mut Substitution) -> Option<Result<(), Error>> {
-    if let Kind::InferenceVariable(ref tv) = **var_type {
-        match tv {
-            TypeVar::Monotype { id, .. } => {
-                // Optionally, you might perform an occurs-check here.
-                subst.insert(*id, other.clone());
-                return Some(Ok(()));
-            },
-            TypeVar::Generic(id1) => {
-                // Only allow unification if the other type is an identical generic.
-                if let Kind::InferenceVariable(TypeVar::Generic(id2)) = &**other {
-                    if id1 == id2 {
-                        return Some(Ok(()));
-                    }
-                }
-                return Some(Err(Error { expected: var_type.clone(), found: other.clone() }));
-            },
+fn unify_inference_variable(var: &TypeVar, other: &Type, subst: &mut Substitution) -> Result<(), Error> {
+    match var {
+        TypeVar::Monotype { id, .. } => {
+            // consider an occurs-check here
+            // XXX this would be a recursive unification, right?
+            subst.insert(*id, other.clone());
+            Ok(())
+        },
+        TypeVar::Generic(id1) => {
+            // only allow unification if the other type is an identical generic.
+            if let Kind::InferenceVariable(TypeVar::Generic(id2)) = &**other {
+                if id1 == id2 {
+                    return Ok(());
+                } 
+            }
+            Err(Error { 
+                expected: var.as_type(), 
+                found: other.clone(),
+            })
         }
     }
-    None
 }
 
 fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Error> {
@@ -48,16 +42,12 @@ fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Er
         return Ok(());
     }
 
-    // Try handling if either side is an inference variable.
-    if let Some(result) = try_unify_inference_variable(&expected, &found, subst) {
-        return result;
-    }
-    if let Some(result) = try_unify_inference_variable(&found, &expected, subst) {
-        return result;
-    }
-
-    // Handle function types.
     match (&*expected, &*found) {
+        // handle inference variables
+        (Kind::InferenceVariable(tv), _) => unify_inference_variable(tv, &found, subst),
+        (_, Kind::InferenceVariable(tv)) => unify_inference_variable(tv, &expected, subst),
+
+        // handle function types
         (Kind::Function(params1, ret1), Kind::Function(params2, ret2)) => {
             if params1.len() != params2.len() {
                 return Err(Error { expected, found });
@@ -67,6 +57,7 @@ fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Er
             }
             unify(ret1.clone(), ret2.clone(), subst)
         },
+
         // Catch-all: if no other pattern matched, the types don't unify.
         _ => Err(Error { expected, found }),
     }
@@ -130,6 +121,10 @@ impl TypeEnvironment {
             arena: TypeArena::new(),
             substitution: Substitution::new(),
         }
+    }
+
+    pub fn substitution(&self) -> &Substitution {
+        &self.substitution
     }
 
     fn fresh_from(&self, origin: usize) -> Type {

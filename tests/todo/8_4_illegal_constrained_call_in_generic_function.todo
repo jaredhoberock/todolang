@@ -1,0 +1,8 @@
+fun foo<T: Add>(arg: T) -> Number {
+  0
+}
+
+fun bar<T>(arg: T) -> Number {
+  // XXX this call should fail because a constraint couldn't be solved
+  foo(arg)
+}

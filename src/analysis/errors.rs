@@ -4,6 +4,7 @@ use crate::types::Error as UnifyError;
 use crate::types::Type;
 use miette::Diagnostic;
 use super::environment::Error as NameError;
+use super::constraint_environment::Error as ConstraintError;
 use thiserror::Error;
 
 #[derive(Debug, Error, Diagnostic)]
@@ -45,6 +46,7 @@ pub struct GeneralError {
 #[diagnostic(transparent)]
 pub enum Error {
     BinOp(BinOpError),
+    Constraint(ConstraintError),
     General(GeneralError),
     TypeMismatch(TypeMismatchError),
 }
@@ -59,7 +61,6 @@ impl Error {
 }
 
 
-
 // the traits below allow us to chain additional context such as source location
 // onto errors originating from lower-level systems such as the name resolver or type checker
 
@@ -68,6 +69,7 @@ pub trait ErrorContext<T> {
     fn err_ctx(self, location: &SourceSpan) -> Result<T, Error>;
 }
 
+// XXX why can't all of these be generic?
 impl<T> ErrorContext<T> for Result<T, NameError> {
     fn err_ctx(self, location: &SourceSpan) -> Result<T, Error> {
         self.map_err(|e| Error::general(format!("{}", e), location))
@@ -77,6 +79,18 @@ impl<T> ErrorContext<T> for Result<T, NameError> {
 impl<T> ErrorContext<T> for Result<T, UnifyError> {
     fn err_ctx(self, location: &SourceSpan) -> Result<T, Error> {
         self.map_err(|e| Error::general(format!("{}", e), location))
+    }
+}
+
+impl<T> ErrorContext<T> for Result<T, ConstraintError> {
+    fn err_ctx(self, location: &SourceSpan) -> Result<T, Error> {
+        self.map_err(|e| Error::general(format!("{}", e), location))
+    }
+}
+
+impl From<ConstraintError> for Error {
+    fn from(e: ConstraintError) -> Error {
+        Error::Constraint(e)
     }
 }
 

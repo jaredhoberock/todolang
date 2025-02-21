@@ -1,8 +1,9 @@
 use crate::source_location::SourceSpan;
 use crate::token::Token;
-use crate::types::Type;
+use crate::types::{Type, TypeScheme};
 pub use super::untyped::BinOp;
 pub use super::untyped::BinOpKind;
+pub use super::untyped::Constraint;
 pub use super::untyped::UnOp;
 pub use super::untyped::UnOpKind;
 use std::rc::Rc;
@@ -108,23 +109,23 @@ pub enum Declaration {
         type_parameters: Vec<Rc<Self>>,
         parameters: Vec<Rc<Self>>,
         body: Expression,
-        type_: Type,
+        type_scheme: TypeScheme,
         location: SourceSpan,
     },
     Parameter {
         name: Token,
-        type_: Type,
+        type_scheme: TypeScheme,
         location: SourceSpan,
     },
     TypeParameter {
         name: Token,
-        type_: Type,
+        type_scheme: TypeScheme,
         location: SourceSpan,
     },
     Variable {
         name: Token,
         initializer: Expression,
-        type_: Type,
+        type_scheme: TypeScheme,
         location: SourceSpan,
     },
 }
@@ -149,12 +150,13 @@ impl Declaration {
         }
     }
 
-    pub fn type_(&self) -> Type {
+    pub fn type_scheme(&self) -> &TypeScheme {
         match self {
-            Declaration::Function { type_, .. }  => type_.clone(),
-            Declaration::Parameter { type_, .. } => type_.clone(),
-            Declaration::TypeParameter { type_, .. } => type_.clone(),
-            Declaration::Variable { type_, .. }  => type_.clone(),
+            Declaration::Function { type_scheme, .. }
+            | Declaration::Parameter { type_scheme, .. }
+            | Declaration::TypeParameter { type_scheme, .. }
+            | Declaration::Variable { type_scheme, .. }
+            => type_scheme
         }
     }
 }

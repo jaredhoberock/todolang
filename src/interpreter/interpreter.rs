@@ -92,13 +92,10 @@ impl Interpreter {
 
     fn interpret_declaration(&mut self, decl: Rc<Declaration>) -> Result<(),Error> {
         match &*decl {
-            Declaration::Function{ name, parameters, body, type_, location, .. } => {
+            Declaration::Function{ name, location, .. } => {
                 self.interpret_function_declaration(
                     &decl,
                     &name,
-                    &parameters,
-                    &body,
-                    &type_,
                     &location,
                 )
             },
@@ -117,9 +114,6 @@ impl Interpreter {
         &mut self,
         decl: &Rc<Declaration>,
         name: &Token,
-        _parameters: &Vec<Rc<Declaration>>,
-        _body: &Expression,
-        _type_: &Type,
         location: &SourceSpan,
     ) -> Result<(), Error> {
         let function = Function::new(decl.clone(), self.env.clone());

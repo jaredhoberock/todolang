@@ -1,0 +1,10 @@
+[0m[1m[38;5;9merror[0m[1m: The trait bound 'T3: Add' is not satisfied'[0m
+  [0m[34m┌─[0m tests/todo/8_4_illegal_constrained_call_in_generic_function.todo:7:7
+  [0m[34m│[0m
+[0m[34m7[0m [0m[34m│[0m   foo([0m[31marg[0m)
+  [0m[34m│[0m   [0m[34m---[0m [0m[31m^^^[0m
+  [0m[34m│[0m   [0m[34m│[0m   [0m[34m│[0m
+  [0m[34m│[0m   [0m[34m│[0m   [0m[34mthe trait 'Add' is not implemented for 'T3'[0m
+  [0m[34m│[0m   [0m[34mrequired by a bound introduced by this call[0m
+
+

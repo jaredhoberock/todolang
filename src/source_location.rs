@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct SourceLocation {
     pub line: usize,
     pub column: usize,
@@ -58,7 +58,7 @@ impl std::fmt::Display for SourceLocation {
 ///
 /// This design aligns with Rust's exclusive slice semantics, making it easy to obtain
 /// a substring using `source[start.offset..end.offset]`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SourceSpan {
     pub start: SourceLocation,
     pub end: SourceLocation,

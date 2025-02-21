@@ -517,10 +517,24 @@ impl<'a> Parser<'a> {
         Ok(TypeExpression{ identifier: self.identifier()? })
     }
 
-    // type_parameter := identifier
+    // constraint := identifier
+    fn constraint(&mut self) -> Result<Constraint, ParseError> {
+        Ok(Constraint{ name: self.identifier()? })
+    }
+
+    // type_parameter := identifier ( ":" constraint )?
     #[restore_state_on_err]
     fn type_parameter(&mut self) -> Result<TypeParameter, ParseError> {
-        Ok(TypeParameter { name: self.identifier()? })
+        let name = self.identifier()?;
+
+        let mut constraint = None;
+        if self.token(TokenKind::Colon).is_ok() {
+            let c = self.constraint()
+                .map_err(ParseError::format_message("{} after ':' in constraint"))?;
+            constraint = Some(c);
+        }
+
+        Ok(TypeParameter { name, constraint })
     }
 
     // type_parameter_list := "<" type_parameter ( "," type_parameter)* ">"
@@ -612,7 +626,8 @@ impl<'a> Parser<'a> {
     fn variable_declaration(&mut self) -> Result<Declaration, ParseError> {
         let _var = self.token(TokenKind::Var)?;
         let name = self.identifier()?;
-        let ascription = self.type_ascription()?;
+        let ascription = self.type_ascription()
+            .map_err(ParseError::format_message("{} after variable declaration"))?;
         let _equal = self.token(TokenKind::Equal)?;
         let initializer = self.expression()?;
         let semi = self.token(TokenKind::Semicolon)?;
