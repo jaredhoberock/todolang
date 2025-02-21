@@ -1,4 +1,5 @@
 use crate::source_location::SourceSpan;
+use derive_more::Display;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -168,7 +169,8 @@ impl TokenLiteral {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Display)]
+#[display(fmt = "{lexeme}")]
 pub struct Token {
     pub kind: TokenKind,
     pub lexeme: String,
