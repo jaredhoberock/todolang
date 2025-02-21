@@ -86,7 +86,7 @@ impl Expression {
 
     pub fn type_defining_location(&self) -> SourceSpan {
         match &self {
-            Expression::Block { statements, last_expr, .. } => {
+            Self::Block { statements, last_expr, .. } => {
                 if let Some(expr) = last_expr {
                     // If there's a trailing expression, use its location
                     expr.type_defining_location()
@@ -99,6 +99,15 @@ impl Expression {
                 }
             },
             _ => self.location(),
+        }
+    }
+
+    pub fn variable_decl(&self) -> Option<DeclRef> {
+        match &self {
+            Self::Block { last_expr, .. } => last_expr.as_ref()
+                .and_then(|e| e.variable_decl()),
+            Self::Variable { decl, .. } => Some(decl.clone()),
+            _ => None,
         }
     }
 }
