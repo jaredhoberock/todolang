@@ -68,7 +68,7 @@ impl Interpreter {
                 self.interpret_assert_statement(&expr, &location)
             },
             Statement::Decl(decl)  => {
-                self.interpret_declaration(decl.clone())
+                self.interpret_declaration(decl)
             },
             Statement::Expr { expr, type_, location } => {
                 self.interpret_expression_statement(
@@ -90,8 +90,8 @@ impl Interpreter {
         Ok(())
     }
 
-    fn interpret_declaration(&mut self, decl: Rc<Declaration>) -> Result<(),Error> {
-        match &*decl {
+    fn interpret_declaration(&mut self, decl: &DeclRef) -> Result<(),Error> {
+        match &*decl.borrow() {
             Declaration::Function{ name, location, .. } => {
                 self.interpret_function_declaration(
                     &decl,
@@ -112,7 +112,7 @@ impl Interpreter {
 
     fn interpret_function_declaration(
         &mut self,
-        decl: &Rc<Declaration>,
+        decl: &DeclRef,
         name: &Token,
         location: &SourceSpan,
     ) -> Result<(), Error> {
@@ -123,12 +123,12 @@ impl Interpreter {
 
     fn interpret_variable_declaration(
         &mut self,
-        decl: &Rc<Declaration>, 
+        decl: &DeclRef, 
         initializer: &Expression,
         location: &SourceSpan,
     ) -> Result<(), Error> {
         let value = self.interpret_expression(initializer)?;
-        match decl.as_ref() {
+        match &*decl.borrow() {
             Declaration::Variable { name, .. } => {
                 self.env.define(name.lexeme.clone(), value)
                     .err_loc(&location)

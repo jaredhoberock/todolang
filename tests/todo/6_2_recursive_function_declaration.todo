@@ -1,0 +1,5 @@
+fun foo(x: Number) -> Number {
+  foo(x)
+}
+
+print "OK";

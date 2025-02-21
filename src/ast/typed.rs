@@ -6,6 +6,7 @@ pub use super::untyped::BinOpKind;
 pub use super::untyped::Constraint;
 pub use super::untyped::UnOp;
 pub use super::untyped::UnOpKind;
+use std::cell::{Ref,RefCell};
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -52,7 +53,7 @@ pub enum Expression {
     },
     Variable {
         name: Token,
-        decl: Rc<Declaration>,
+        decl: DeclRef,
         type_: Type,
         scope_distance: usize,
         location: SourceSpan,
@@ -102,12 +103,66 @@ impl Expression {
     }
 }
 
+// Forward declarations (which are themselves caused by recursive functions)
+// require Declarations to be in a RefCell
+// When a declaration's definition becomes available, we mutate the node
+#[derive(Debug, Clone)]
+pub struct DeclRef(Rc<RefCell<Declaration>>);
+
+impl DeclRef {
+    pub fn new(decl: Declaration) -> Self {
+        DeclRef(Rc::new(RefCell::new(decl)))
+    }
+
+    pub fn borrow(&self) -> Ref<Declaration> {
+        self.0.borrow()
+    }
+
+    // provides the definition for a Declaration::Forward by mutating
+    // the stored Declaration
+    pub fn define(&self, def: Declaration) {
+        match *self.borrow() {
+            Declaration::Forward { name: ref old_name, .. } => {
+                // extract the name and type scheme from the new declaration
+                let new_name = def.name();
+
+                if old_name != new_name {
+                    panic!("Internal compiler error: definition mismatch: name changed");
+                }
+            }
+            _ => panic!("Internal compiler error: cannot redefine '{}'", self.borrow().name().lexeme)
+        }
+
+        match def {
+            Declaration::Forward { .. } => {
+                panic!("Internal compiler error: cannot define a forward declaration with another forward declaration");
+            },
+            _ => (),
+        }
+
+        *self.0.borrow_mut() = def;
+    }
+}
+
+impl PartialEq for DeclRef {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for DeclRef {}
+
 #[derive(Debug)]
 pub enum Declaration {
+    Forward {
+        name: Token,
+        type_scheme: TypeScheme,
+        location: SourceSpan,
+    },
     Function {
         name: Token,
-        type_parameters: Vec<Rc<Self>>,
-        parameters: Vec<Rc<Self>>,
+        type_parameters: Vec<DeclRef>,
+        parameters: Vec<DeclRef>,
         body: Expression,
         type_scheme: TypeScheme,
         location: SourceSpan,
@@ -133,7 +188,8 @@ pub enum Declaration {
 impl Declaration {
     pub fn location(&self) -> SourceSpan {
         match &self {
-            Self::Function { location, .. }
+            | Self::Forward { location, .. }
+            | Self::Function { location, .. }
             | Self::Parameter { location, .. }
             | Self::TypeParameter { location, .. }
             | Self::Variable { location, .. }
@@ -143,16 +199,19 @@ impl Declaration {
 
     pub fn name(&self) -> &Token {
         match self {
-            Self::Function { name, .. } => &name,
-            Self::Parameter { name, .. } => &name,
-            Self::TypeParameter { name, .. } => &name,
-            Self::Variable { name, .. } => &name,
+            Self::Forward { name, .. }
+            | Self::Function { name, .. }
+            | Self::Parameter { name, .. }
+            | Self::TypeParameter { name, .. }
+            | Self::Variable { name, .. }
+            => &name
         }
     }
 
     pub fn type_scheme(&self) -> &TypeScheme {
         match self {
-            Declaration::Function { type_scheme, .. }
+            Declaration::Forward { type_scheme, .. }
+            | Declaration::Function { type_scheme, .. }
             | Declaration::Parameter { type_scheme, .. }
             | Declaration::TypeParameter { type_scheme, .. }
             | Declaration::Variable { type_scheme, .. }
@@ -168,7 +227,7 @@ pub enum Statement {
         type_: Type,
         location: SourceSpan,
     },
-    Decl(Rc<Declaration>),
+    Decl(DeclRef),
     Expr {
         expr: Expression,
         type_: Type,
@@ -188,7 +247,7 @@ impl Statement {
             | Self::Expr { location, .. }
             | Self::Print { location, .. }
             => location.clone(),
-            Self::Decl(decl) => decl.as_ref().location(),
+            Self::Decl(decl) => decl.borrow().location(),
         }
     }
 }

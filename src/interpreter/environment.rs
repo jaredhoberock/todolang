@@ -6,12 +6,12 @@ use super::interpreter::*;
 
 #[derive(Clone, Debug)]
 pub struct Function {
-    decl: Rc<Declaration>,
+    decl: DeclRef,
     closure: Rc<RefCell<Environment>>,
 }
 
 impl Function {
-    pub fn new(decl: Rc<Declaration>, closure: Rc<RefCell<Environment>>) -> Self {
+    pub fn new(decl: DeclRef, closure: Rc<RefCell<Environment>>) -> Self {
         Function { decl, closure }
     }
 
@@ -20,10 +20,11 @@ impl Function {
         let env = Environment::new_enclosed_shared(self.closure.clone());
 
         // get the parameter names and body
-        let (parameter_names, body) = match self.decl.as_ref() {
+        let decl_borrow = self.decl.borrow();
+        let (parameter_names, body) = match &*decl_borrow {
             Declaration::Function{ parameters, body, .. } => {
                 let parameter_names: Vec<String> = parameters.iter()
-                    .map(|p| p.name().lexeme.clone())
+                    .map(|p| p.borrow().name().lexeme.clone())
                     .collect();
                 (parameter_names, body)
             },
@@ -43,14 +44,13 @@ impl Function {
     }
 
     fn to_string(&self) -> String {
-        let decl = &*self.decl;
-        format!("<fn {}>", &decl.name().lexeme)
+        format!("<fn {}>", &self.decl.borrow().name().lexeme)
     }
 }
 
 impl PartialEq for Function {
     fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.decl, &other.decl)
+        self.decl == other.decl
     }
 }
 

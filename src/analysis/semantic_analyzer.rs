@@ -1,6 +1,7 @@
 use crate::ast::untyped::*;
-use crate::ast::typed::Module as TypedModule;
 use crate::ast::typed::Declaration as TypedDeclaration;
+use crate::ast::typed::DeclRef;
+use crate::ast::typed::Module as TypedModule;
 use crate::ast::typed::Expression as TypedExpression;
 use crate::ast::typed::LiteralValue as TypedLiteralValue;
 use crate::ast::typed::Literal as TypedLiteral;
@@ -11,7 +12,6 @@ use crate::types::{TypeEnvironment, TypeScheme};
 use super::constraint_environment::{AnnotatedConstraint, ConstrainedCallErrorContext, ConstraintEnvironment};
 use super::environment::Environment;
 use super::errors::*;
-use std::rc::Rc;
 
 struct SemanticAnalyzer {
     constraint_env: ConstraintEnvironment,
@@ -252,7 +252,8 @@ impl SemanticAnalyzer {
             .err_ctx(&location)?;
 
         // instantiate the variable's type and constraints
-        let (type_, constraints) = decl.type_scheme()
+        let (type_, constraints) = decl.borrow()
+            .type_scheme()
             .instantiate(&self.type_env);
 
         // add constraints to the environment
@@ -260,7 +261,7 @@ impl SemanticAnalyzer {
             let annotated = AnnotatedConstraint::new(
                 c, 
                 location.clone(), 
-                decl.location().clone()
+                decl.borrow().location().clone()
             );
             self.constraint_env.add_constraint(annotated);
         }
@@ -299,7 +300,7 @@ impl SemanticAnalyzer {
         })
     }
 
-    fn analyze_declaration(&mut self, decl: &Declaration) -> Result<Rc<TypedDeclaration>, Error> {
+    fn analyze_declaration(&mut self, decl: &Declaration) -> Result<DeclRef, Error> {
         match decl {
             Declaration::Function { name, type_parameters, parameters, return_type, body, } => {
                 self.analyze_function_declaration(
@@ -322,39 +323,39 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn analyze_type_parameter(&mut self, param: &TypeParameter) -> Result<Rc<TypedDeclaration>, Error> {
+    fn analyze_type_parameter(&mut self, param: &TypeParameter) -> Result<DeclRef, Error> {
         // create a generic (universally quantified) variable with constraints
         let type_scheme = TypeScheme::new_generic(
             &self.type_env,
             param.constraint.as_ref().map(|c| c.name.lexeme.clone())
         );
 
-        // declare the type parameter
-        self.env.declare(&param.name.lexeme, type_scheme.clone())
-            .err_ctx(&param.location())?;
-
-        let result = Rc::new(TypedDeclaration::TypeParameter {
+        let result = DeclRef::new(TypedDeclaration::TypeParameter {
             name: param.name.clone(),
             type_scheme,
             location: param.location(),
         });
 
-        self.env.define(&param.name.lexeme, result.clone().into());
+        // insert into the name environment
+        self.env.insert(&param.name.lexeme, result.clone().into())
+            .err_ctx(&param.location())?;
+
         Ok(result)
     }
 
-    fn analyze_parameter(&mut self, param: &Parameter) -> Result<Rc<TypedDeclaration>, Error> {
+    fn analyze_parameter(&mut self, param: &Parameter) -> Result<DeclRef, Error> {
         let type_scheme = self.analyze_type_ascription(&param.ascription)?;
-        self.env.declare(&param.name.lexeme, type_scheme.clone())
-            .err_ctx(&param.location())?;
 
-        let result = Rc::new(TypedDeclaration::Parameter {
+        let result = DeclRef::new(TypedDeclaration::Parameter {
             name: param.name.clone(),
             type_scheme,
             location: param.location(),
         });
 
-        self.env.define(&param.name.lexeme, result.clone().into());
+        // insert into the name environment
+        self.env.insert(&param.name.lexeme, result.clone().into())
+            .err_ctx(&param.location())?;
+
         Ok(result)
     }
 
@@ -365,10 +366,10 @@ impl SemanticAnalyzer {
         untyped_parameters: &Vec<Parameter>, 
         untyped_return_type: &TypeExpression,
         untyped_body: &Expression, 
-        location: SourceSpan) -> Result<Rc<TypedDeclaration>, Error>
+        location: SourceSpan) -> Result<DeclRef, Error>
     {
         // enter function scope
-        let result = self.with_new_scope(|slf| {
+        self.with_new_scope(|slf| {
             // analyze type parameters
             let mut type_parameters = Vec::new();
             for p in untyped_type_parameters {
@@ -384,8 +385,7 @@ impl SemanticAnalyzer {
 
             // get type scheme of parameters
             let param_type_schemes = parameters.iter()
-                .map(|p| p.as_ref().type_scheme())
-                .cloned()
+                .map(|p| p.borrow().type_scheme().clone())
                 .collect();
 
             // analyze return type
@@ -398,8 +398,15 @@ impl SemanticAnalyzer {
                 return_type_scheme.clone()
             );
 
+            // Create a forward declaration in the enclosing scope
+            let result = DeclRef::new(TypedDeclaration::Forward {
+                name: name.clone(),
+                type_scheme: type_scheme.clone(),
+                location: location.clone(),
+            });
+
             // declare the function in the enclosing scope
-            slf.env.declare_in_enclosing_scope(&name.lexeme, type_scheme.clone())
+            slf.env.insert_in_enclosing_scope(&name.lexeme, result.clone().into())
                 .err_ctx(&location)?;
 
             // analyze body
@@ -415,21 +422,18 @@ impl SemanticAnalyzer {
                     body.type_defining_location()
                 )?;
 
-            Ok(Rc::new(TypedDeclaration::Function {
+            // define the function
+            result.define(TypedDeclaration::Function {
                 name: name.clone(),
                 type_parameters,
                 parameters,
                 body,
                 type_scheme,
-                location,
-            }))
-        });
+                location
+            });
 
-        if let Ok(typed_decl) = &result {
-          self.env.define(&name.lexeme, typed_decl.clone().into());
-        }
-
-        result
+            Ok(result)
+        })
     }
 
     fn analyze_expression_statement(&mut self, expr: &Expression, location: SourceSpan) -> Result<TypedStatement, Error> {
@@ -455,11 +459,13 @@ impl SemanticAnalyzer {
         ascription: &TypeAscription,
         initializer: &Expression, 
         location: SourceSpan
-    ) -> Result<Rc<TypedDeclaration>, Error> {
-        let type_scheme = self.analyze_type_ascription(ascription)?;
-        self.env
-            .declare(&name.lexeme, type_scheme.clone())
+    ) -> Result<DeclRef, Error> {
+        // first check that the name is unique
+        self.env.check_unique_name(&name.lexeme)
             .err_ctx(&location)?;
+
+        let type_scheme = self.analyze_type_ascription(ascription)?;
+
         let typed_initializer = self.analyze_expression(&initializer)?;
 
         // instantiate the variable's ascribed type
@@ -469,14 +475,16 @@ impl SemanticAnalyzer {
         self.type_env.unify(expected_ty, typed_initializer.type_())
             .err_ctx(&location)?;
 
-        let decl = Rc::new(TypedDeclaration::Variable{
+        let decl = DeclRef::new(TypedDeclaration::Variable{
             name: name.clone(),
             initializer: typed_initializer,
             type_scheme,
-            location
+            location: location.clone(),
         });
 
-        self.env.define(&name.lexeme, decl.clone().into());
+        self.env.insert(&name.lexeme, decl.clone().into())
+            .err_ctx(&location)?;
+
         Ok(decl)
     }
 
