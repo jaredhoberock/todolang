@@ -192,7 +192,10 @@ impl SemanticAnalyzer {
             .err_ctx(&location)?;
 
         self.constraint_env.solve_constraints(&self.type_env)
-            .constrained_call_err_ctx(callee.type_(), argument_locations)?;
+            .constrained_call_err_ctx(
+                callee.variable_decl().unwrap(), 
+                callee.type_(), 
+                argument_locations)?;
 
         Ok(TypedExpression::Call {
             callee: Box::new(callee),
@@ -258,11 +261,7 @@ impl SemanticAnalyzer {
 
         // add constraints to the environment
         for c in constraints {
-            let annotated = AnnotatedConstraint::new(
-                c, 
-                location.clone(), 
-                decl.borrow().location().clone()
-            );
+            let annotated = AnnotatedConstraint::new(c, location.clone());
             self.constraint_env.add_constraint(annotated);
         }
 
@@ -327,7 +326,7 @@ impl SemanticAnalyzer {
         // create a generic (universally quantified) variable with constraints
         let type_scheme = TypeScheme::new_generic(
             &self.type_env,
-            param.constraint.as_ref().map(|c| c.name.lexeme.clone())
+            param.constraint.as_ref().map(|c| c.name.clone())
         );
 
         let result = DeclRef::new(TypedDeclaration::TypeParameter {

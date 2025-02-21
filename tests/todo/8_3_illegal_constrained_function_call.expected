@@ -1,6 +1,9 @@
 [0m[1m[38;5;9merror[0m[1m: The trait bound 'Bool: Add' is not satisfied'[0m
   [0m[34m┌─[0m tests/todo/8_3_illegal_constrained_function_call.todo:6:11
   [0m[34m│[0m
+[0m[34m1[0m [0m[34m│[0m fun foo<T, U: Add>(y: T, x: U) -> Number {
+  [0m[34m│[0m               [0m[34m---[0m [0m[34mrequired by a bound in 'foo'[0m
+  [0m[34m·[0m
 [0m[34m6[0m [0m[34m│[0m foo(true, [0m[31mtrue[0m);
   [0m[34m│[0m [0m[34m---[0m       [0m[31m^^^^[0m
   [0m[34m│[0m [0m[34m│[0m         [0m[34m│[0m

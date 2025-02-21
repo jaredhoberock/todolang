@@ -1,3 +1,4 @@
+use crate::ast::typed::DeclRef;
 use crate::source_location::SourceSpan;
 use crate::types::*;
 use derive_more::Display;
@@ -13,16 +14,13 @@ pub struct AnnotatedConstraint {
     constraint: Constraint,
     // the use site that generated the constraint
     use_location: SourceSpan,
-    // the location of the bound that generated the constraint
-    bound_location: SourceSpan,
 }
 
 impl AnnotatedConstraint {
-    pub fn new(constraint: Constraint, use_location: SourceSpan, bound_location: SourceSpan) -> Self {
+    pub fn new(constraint: Constraint, use_location: SourceSpan) -> Self {
         Self {
             constraint,
             use_location,
-            bound_location,
         }
     }
 
@@ -33,7 +31,6 @@ impl AnnotatedConstraint {
                 self.constraint.clone(),
                 self.constraint.type_var.apply(&mapping),
                 self.use_location.clone(),
-                self.bound_location.clone(),
             ))
         }
     }
@@ -140,15 +137,13 @@ impl ConstraintEnvironment {
 
 
 #[derive(Debug, Error, Diagnostic)]
-#[error("The trait bound '{0}: {1}' is not satisfied", failing_type, constraint.trait_)]
+#[error("The trait bound '{0}: {1}' is not satisfied", failing_type, constraint.trait_.lexeme)]
 pub struct BasicError {
     pub constraint: Constraint,
     pub failing_type: Type,
     // the location of the use that generated the constraint
     #[label]
     pub use_location: SourceSpan,
-    #[label("required by this bound")]
-    pub bound_location: SourceSpan,
 }
 
 #[derive(Debug, Error, Diagnostic)]
@@ -160,6 +155,9 @@ pub struct CallError {
     pub failing_param_loc: SourceSpan,
     #[label("required by a bound introduced by this call")]
     pub call_location: SourceSpan,
+    pub fn_name: String,
+    #[label("required by a bound in '{fn_name}'")]
+    pub fn_loc: SourceSpan,
 }
 
 #[derive(Debug, Error, Diagnostic)]
@@ -175,13 +173,11 @@ impl Error {
         constraint: Constraint,
         failing_type: Type,
         use_location: SourceSpan, 
-        bound_location: SourceSpan
     ) -> Self {
         Self::Basic(BasicError {
             constraint,
             failing_type,
             use_location,
-            bound_location,
         })
     }
 
@@ -190,12 +186,16 @@ impl Error {
         failing_trait: String,
         failing_param_loc: SourceSpan,
         call_location: SourceSpan,
+        fn_name: String,
+        fn_loc: SourceSpan,
     ) -> Self {
         Self::Call(CallError {
             failing_param_type,
             failing_trait,
             failing_param_loc,
             call_location,
+            fn_name,
+            fn_loc,
         })
     }
 
@@ -210,6 +210,7 @@ impl Error {
 pub trait ConstrainedCallErrorContext<T> {
     fn constrained_call_err_ctx(
         self,
+        callee_decl: DeclRef,
         callee_type: Type,
         argument_locations: Vec<SourceSpan>,
     ) -> Result<T,Error>;
@@ -220,6 +221,7 @@ impl<T> ConstrainedCallErrorContext<T> for Result<T,Error> {
     // related to a function call that failed
     fn constrained_call_err_ctx(
         self,
+        callee_decl: DeclRef,
         callee_type: Type,
         argument_locations: Vec<SourceSpan>,
     ) -> Result<T,Error> {
@@ -240,14 +242,18 @@ impl<T> ConstrainedCallErrorContext<T> for Result<T,Error> {
                 }
             }
 
+            // find the 
+
             // XXX instead of printing the failing_param_type, we really need to print the name of
             // the parameter's type as it would appear in the source text
             match failing_param_loc {
                 Some(failing_param_loc) => Error::call(
                     failing_param_type,
-                    basic_error.constraint.trait_.to_string(),
+                    basic_error.constraint.trait_.lexeme.to_string(),
                     failing_param_loc, 
                     basic_error.use_location.clone(),
+                    callee_decl.borrow().name().lexeme.clone(),
+                    basic_error.constraint.trait_.location.clone(),
                 ),
                 None => Error::Basic(basic_error),
             }

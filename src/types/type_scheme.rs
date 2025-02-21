@@ -1,3 +1,4 @@
+use crate::token::Token;
 use std::collections::HashSet;
 use super::{Constraint, Kind, Type, TypeEnvironment};
 
@@ -19,7 +20,7 @@ impl TypeScheme {
         Self::new(type_, HashSet::new())
     }
 
-    pub fn new_generic(env: &TypeEnvironment, trait_name: Option<String>) -> Self {
+    pub fn new_generic(env: &TypeEnvironment, trait_name: Option<Token>) -> Self {
         let type_ = env.generic();
         let mut constraints = HashSet::new();
         match (trait_name, &*type_) {
