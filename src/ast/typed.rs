@@ -7,6 +7,7 @@ pub use super::untyped::Constraint;
 pub use super::untyped::UnOp;
 pub use super::untyped::UnOpKind;
 use std::cell::{Ref,RefCell};
+use std::hash::{Hash,Hasher};
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -160,6 +161,13 @@ impl PartialEq for DeclRef {
 }
 
 impl Eq for DeclRef {}
+
+impl Hash for DeclRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Hash the pointer address of the Rc
+        Rc::as_ptr(&self.0).hash(state);
+    }
+}
 
 #[derive(Debug)]
 pub enum Declaration {
