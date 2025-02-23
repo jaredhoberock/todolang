@@ -8,6 +8,7 @@ pub use super::untyped::UnOp;
 pub use super::untyped::UnOpKind;
 use std::cell::{Ref,RefCell};
 use std::hash::{Hash,Hasher};
+use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -24,31 +25,65 @@ pub struct Literal {
     pub location: SourceSpan,
 }
 
+// Constraints originate in Expressions
+// Therefore, provenance tracking for constraints requires
+// storing references to expression nodes
+#[derive(Debug, Clone)]
+pub struct ExprRef(Rc<Expression>);
+
+impl ExprRef {
+    pub fn new(expr: Expression) -> Self {
+        Self(Rc::new(expr))
+    }
+}
+
+impl Deref for ExprRef {
+    type Target = Expression;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PartialEq for ExprRef {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for ExprRef {}
+
+impl Hash for ExprRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Rc::as_ptr(&self.0).hash(state)
+    }
+}
+
 #[derive(Debug)]
 pub enum Expression {
     Binary {
-        lhs: Box<Self>,
+        lhs: ExprRef,
         op: BinOp,
-        rhs: Box<Self>,
+        rhs: ExprRef,
         type_: Type,
         location: SourceSpan,
     },
     Block {
         statements: Vec<Statement>,
-        last_expr: Option<Box<Self>>,
+        last_expr: Option<ExprRef>,
         type_: Type,
         location: SourceSpan,
     },
     Call {
-        callee: Box<Self>,
-        arguments: Vec<Self>,
+        callee: ExprRef,
+        arguments: Vec<ExprRef>,
         type_: Type,
         location: SourceSpan,
     },
     Literal(Literal),
     Unary {
         op: UnOp,
-        operand: Box<Self>,
+        operand: ExprRef,
         type_: Type,
         location: SourceSpan,
     },
@@ -180,7 +215,7 @@ pub enum Declaration {
         name: Token,
         type_parameters: Vec<DeclRef>,
         parameters: Vec<DeclRef>,
-        body: Expression,
+        body: ExprRef,
         type_scheme: TypeScheme,
         location: SourceSpan,
     },
@@ -196,7 +231,7 @@ pub enum Declaration {
     },
     Variable {
         name: Token,
-        initializer: Expression,
+        initializer: ExprRef,
         type_scheme: TypeScheme,
         location: SourceSpan,
     },
@@ -240,18 +275,18 @@ impl Declaration {
 #[derive(Debug)]
 pub enum Statement {
     Assert {
-        expr: Expression,
+        expr: ExprRef,
         type_: Type,
         location: SourceSpan,
     },
     Decl(DeclRef),
     Expr {
-        expr: Expression,
+        expr: ExprRef,
         type_: Type,
         location: SourceSpan,
     },
     Print {
-        expr: Expression,
+        expr: ExprRef,
         type_: Type,
         location: SourceSpan,
     },

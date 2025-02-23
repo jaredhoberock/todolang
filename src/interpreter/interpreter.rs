@@ -197,9 +197,9 @@ impl Interpreter {
 
     fn interpret_binary_expression(
         &mut self,
-        lhs: &Box<Expression>,
+        lhs: &ExprRef,
         op: &BinOp,
-        rhs: &Box<Expression>,
+        rhs: &ExprRef,
         _type_: &Type,
         _location: &SourceSpan
 
@@ -222,7 +222,7 @@ impl Interpreter {
     fn interpret_block_expression(
         &mut self,
         statements: &Vec<Statement>,
-        last_expr: &Option<Box<Expression>>,
+        last_expr: &Option<ExprRef>,
         _type_: &Type,
         _location: &SourceSpan
     ) -> Result<Value,Error> {
@@ -241,7 +241,7 @@ impl Interpreter {
     fn interpret_call_expression(
         &mut self,
         callee: &Expression, 
-        arguments: &Vec<Expression>, 
+        arguments: &Vec<ExprRef>, 
         _type_: &Type,
         _location: &SourceSpan) -> Result<Value,Error> {
         let callee_value = self.interpret_expression(&callee)?;
@@ -270,7 +270,7 @@ impl Interpreter {
     fn interpret_unary_expression(
         &mut self, 
         op: &UnOp, 
-        operand: &Box<Expression>, 
+        operand: &ExprRef, 
         _type_: &Type, 
         _location: &SourceSpan,
     ) -> Result<Value,Error> {

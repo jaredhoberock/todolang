@@ -3,6 +3,7 @@ use crate::ast::typed::Declaration as TypedDeclaration;
 use crate::ast::typed::DeclRef;
 use crate::ast::typed::Module as TypedModule;
 use crate::ast::typed::Expression as TypedExpression;
+use crate::ast::typed::ExprRef;
 use crate::ast::typed::LiteralValue as TypedLiteralValue;
 use crate::ast::typed::Literal as TypedLiteral;
 use crate::ast::typed::Statement as TypedStatement;
@@ -48,7 +49,7 @@ impl SemanticAnalyzer {
         result
     }
 
-    fn analyze_expression(&mut self, expr: &Expression) -> Result<TypedExpression, Error> {
+    fn analyze_expression(&mut self, expr: &Expression) -> Result<ExprRef, Error> {
         match expr {
             Expression::Binary { lhs, op, rhs } => {
                 self.analyze_binary_expression(&lhs, &op, &rhs, expr.location())
@@ -79,7 +80,7 @@ impl SemanticAnalyzer {
         op: &BinOp,
         untyped_rhs: &Box<Expression>,
         location: SourceSpan
-    ) -> Result<TypedExpression, Error> {
+    ) -> Result<ExprRef, Error> {
         let lhs = self.analyze_expression(&*untyped_lhs)?;
         let rhs = self.analyze_expression(&*untyped_rhs)?;
 
@@ -120,13 +121,13 @@ impl SemanticAnalyzer {
         // solve constraints
         self.constraint_env.solve_constraints(&self.type_env)?;
 
-        Ok(TypedExpression::Binary {
-            lhs: Box::new(lhs),
+        Ok(ExprRef::new(TypedExpression::Binary {
+            lhs,
             op: op.clone(),
-            rhs: Box::new(rhs),
+            rhs,
             type_: result_ty,
             location
-        })
+        }))
     }
 
     fn analyze_block_expression(
@@ -134,7 +135,7 @@ impl SemanticAnalyzer {
         untyped_statements: &Vec<Statement>,
         untyped_last_expr: &Option<Box<Expression>>,
         location: SourceSpan
-    ) -> Result<TypedExpression, Error> {
+    ) -> Result<ExprRef, Error> {
         self.with_new_scope(|slf| {
             let mut statements = Vec::new();
             let mut type_ = slf.type_env.get_unit();
@@ -148,17 +149,17 @@ impl SemanticAnalyzer {
             let last_expr = if let Some(e) = &untyped_last_expr {
                 let typed_expr = slf.analyze_expression(&*e)?;
                 type_ = typed_expr.type_();
-                Some(Box::new(typed_expr))
+                Some(typed_expr)
             } else {
                 None
             };
 
-            Ok(TypedExpression::Block {
+            Ok(ExprRef::new(TypedExpression::Block {
                 statements,
                 last_expr,
                 type_,
                 location,
-            })
+            }))
         })
     }
 
@@ -167,7 +168,7 @@ impl SemanticAnalyzer {
         untyped_callee: &Expression, 
         untyped_arguments: &Vec<Expression>, 
         location: SourceSpan
-    ) -> Result<TypedExpression, Error> {
+    ) -> Result<ExprRef, Error> {
         let callee = self.analyze_expression(&untyped_callee)?;
         if !callee.type_().is_function() {
             return Err(Error::general("Cannot call non-function", &location))
@@ -197,28 +198,28 @@ impl SemanticAnalyzer {
                 callee.type_(), 
                 argument_locations)?;
 
-        Ok(TypedExpression::Call {
-            callee: Box::new(callee),
+        Ok(ExprRef::new(TypedExpression::Call {
+            callee,
             arguments,
             type_: result_type,
             location,
-        })
+        }))
     }
 
     fn analyze_literal_expression(
         &mut self,
         untyped_value: &LiteralValue, 
         location: SourceSpan
-    ) -> Result<TypedExpression, Error> {
+    ) -> Result<ExprRef, Error> {
         let (value, type_) = match untyped_value {
             LiteralValue::Bool(b)   => (TypedLiteralValue::Bool(*b), self.type_env.get_bool()),
             LiteralValue::Number(n) => (TypedLiteralValue::Number(*n), self.type_env.get_number()),
             LiteralValue::String(s) => (TypedLiteralValue::String(s.clone()), self.type_env.get_string()),
         };
 
-        Ok(TypedExpression::Literal(
+        Ok(ExprRef::new(TypedExpression::Literal(
             TypedLiteral { value, type_, location }
-        ))
+        )))
     }
 
     fn analyze_unary_expression(
@@ -226,7 +227,7 @@ impl SemanticAnalyzer {
         op: &UnOp,
         untyped_operand: &Box<Expression>,
         location: SourceSpan
-    ) -> Result<TypedExpression, Error> {
+    ) -> Result<ExprRef, Error> {
         let operand = self.analyze_expression(&*untyped_operand)?;
         let expected_type = match op.kind {
             UnOpKind::Neg => self.type_env.get_number(),
@@ -237,19 +238,19 @@ impl SemanticAnalyzer {
         self.type_env.unify(expected_type.clone(), operand.type_().clone())
             .err_ctx(&location)?;
 
-        Ok(TypedExpression::Unary {
+        Ok(ExprRef::new(TypedExpression::Unary {
             op: op.clone(),
-            operand: Box::new(operand),
+            operand,
             type_: expected_type,
             location,
-        })
+        }))
     }
 
     fn analyze_variable_expression(
         &mut self,
         name: &Token, 
         location: SourceSpan
-    ) -> Result<TypedExpression, Error> {
+    ) -> Result<ExprRef, Error> {
         let (decl, scope_distance) = self.env
             .get_variable(&name.lexeme)
             .err_ctx(&location)?;
@@ -265,13 +266,13 @@ impl SemanticAnalyzer {
             self.constraint_env.add_constraint(annotated);
         }
 
-        Ok(TypedExpression::Variable {
+        Ok(ExprRef::new(TypedExpression::Variable {
             name: name.clone(),
             decl,
             type_,
             scope_distance,
             location,
-        })
+        }))
     }
 
     fn analyze_type_expression(&mut self, expr: &TypeExpression) -> Result<TypeScheme, Error> {
