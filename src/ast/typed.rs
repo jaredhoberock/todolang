@@ -290,18 +290,15 @@ impl Declaration {
 pub enum Statement {
     Assert {
         expr: ExprRef,
-        type_: Type,
         location: SourceSpan,
     },
     Decl(DeclRef),
     Expr {
         expr: ExprRef,
-        type_: Type,
         location: SourceSpan,
     },
     Print {
         expr: ExprRef,
-        type_: Type,
         location: SourceSpan,
     },
 }

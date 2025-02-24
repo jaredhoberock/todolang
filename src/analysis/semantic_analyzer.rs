@@ -299,7 +299,6 @@ impl SemanticAnalyzer {
 
         Ok(TypedStatement::Assert {
             expr,
-            type_: self.type_env.get_unit(),
             location
         })
     }
@@ -443,7 +442,6 @@ impl SemanticAnalyzer {
     fn analyze_expression_statement(&mut self, expr: &Expression, location: SourceSpan) -> Result<TypedStatement, Error> {
         Ok(TypedStatement::Expr {
             expr: self.analyze_expression(&expr)?,
-            type_: self.type_env.get_unit(),
             location
         })
     }
@@ -452,7 +450,6 @@ impl SemanticAnalyzer {
         let expr = self.analyze_expression(&untyped_expr)?;
         Ok(TypedStatement::Print {
             expr,
-            type_: self.type_env.get_unit(),
             location
         })
     }

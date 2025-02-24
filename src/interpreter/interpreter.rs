@@ -70,10 +70,9 @@ impl Interpreter {
             Statement::Decl(decl)  => {
                 self.interpret_declaration(decl)
             },
-            Statement::Expr { expr, type_, location } => {
+            Statement::Expr { expr, location } => {
                 self.interpret_expression_statement(
                     &expr, 
-                    &type_, 
                     &location)
             },
             Statement::Print { expr, location, .. } => {
@@ -137,7 +136,7 @@ impl Interpreter {
         }
     }
 
-    fn interpret_expression_statement(&mut self, expr: &Expression, _type: &Type, _location: &SourceSpan) -> Result<(),Error> {
+    fn interpret_expression_statement(&mut self, expr: &Expression, _location: &SourceSpan) -> Result<(),Error> {
         self.interpret_expression(&expr)?;
         Ok(())
     }
