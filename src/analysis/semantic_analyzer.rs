@@ -10,7 +10,7 @@ use crate::ast::typed::Statement as TypedStatement;
 use crate::source_location::SourceSpan;
 use crate::token::Token;
 use crate::types::{TypeEnvironment, TypeScheme};
-use super::constraint_environment::{AnnotatedConstraint, ConstrainedCallErrorContext, ConstraintEnvironment};
+use super::constraint_environment::{ConstraintEnvironment, ConstraintWithProvenance};
 use super::environment::Environment;
 use super::errors::*;
 
@@ -119,7 +119,7 @@ impl SemanticAnalyzer {
             .binop_err_ctx(op.clone(), rhs.type_defining_location())?;
 
         // solve constraints
-        self.constraint_env.solve_constraints(&self.type_env)?;
+        self.constraint_env.solve_constraints(&mut self.type_env.substitution_mut())?;
 
         Ok(ExprRef::new(TypedExpression::Binary {
             lhs,
@@ -181,29 +181,31 @@ impl SemanticAnalyzer {
         let argument_types: Vec<_> = arguments.iter()
             .map(|a| a.type_().clone())
             .collect();
-        let argument_locations: Vec<_> = arguments.iter()
-            .map(|a| a.location().clone())
-            .collect();
 
         let result_type = callee.type_().function_return_type();
-        let call_type = self.type_env.get_function(argument_types.clone(), result_type);
 
-        // unify types and solve constraints
+        // create AST for the call
+        let call_expr = ExprRef::new(TypedExpression::Call {
+            callee: callee.clone(),
+            arguments,
+            type_: result_type,
+            location: location.clone(),
+        });
+
+        // before solving constraints, add additional context for constraints 
+        // generated from use of the callee
+        self.constraint_env.transform_provenance_for_call(call_expr.clone());
+
+        // XXX introduce an equality constraint for each argument instead of calling unify
+
+        // unify types
+        let call_type = self.type_env.get_function(argument_types.clone(), result_type);
         self.type_env.unify(callee.type_(), call_type)
             .err_ctx(&location)?;
 
-        self.constraint_env.solve_constraints(&self.type_env)
-            .constrained_call_err_ctx(
-                callee.variable_decl().unwrap(), 
-                callee.type_(), 
-                argument_locations)?;
+        self.constraint_env.solve_constraints(&mut self.type_env.substitution_mut())?;
 
-        Ok(ExprRef::new(TypedExpression::Call {
-            callee,
-            arguments,
-            type_: result_type,
-            location,
-        }))
+        Ok(call_expr)
     }
 
     fn analyze_literal_expression(
@@ -260,19 +262,21 @@ impl SemanticAnalyzer {
             .type_scheme()
             .instantiate(&self.type_env);
 
-        // add constraints to the environment
-        for c in constraints {
-            let annotated = AnnotatedConstraint::new(c, location.clone());
-            self.constraint_env.add_constraint(annotated);
-        }
-
-        Ok(ExprRef::new(TypedExpression::Variable {
+        let expr = ExprRef::new(TypedExpression::Variable {
             name: name.clone(),
             decl,
             type_,
             scope_distance,
             location,
-        }))
+        });
+
+        // add constraints to the environment
+        for c in constraints {
+            let annotated = ConstraintWithProvenance::new_var_use(c, expr.clone());
+            self.constraint_env.add_constraint(annotated, self.type_env.substitution_mut())?;
+        }
+
+        Ok(expr)
     }
 
     fn analyze_type_expression(&mut self, expr: &TypeExpression) -> Result<TypeScheme, Error> {

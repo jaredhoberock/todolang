@@ -1,4 +1,4 @@
-use crate::ast::typed::DeclRef;
+use crate::ast::typed::{Expression, ExprRef};
 use crate::source_location::SourceSpan;
 use crate::types::*;
 use derive_more::Display;
@@ -8,36 +8,127 @@ use std::collections::VecDeque;
 use std::hash::Hash;
 use thiserror::Error;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Display)]
-#[display(fmt = "{constraint}")]
-pub struct AnnotatedConstraint {
-    constraint: Constraint,
-    // the use site that generated the constraint
-    use_location: SourceSpan,
+// Provenance records the reason a particular Constraint was instantiated
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Provenance {
+    // all trait bound constraints originate in some use of a variable
+    VarUse { expr: ExprRef },
+
+    // some variables are used in call expressions. when this happens,
+    // we promote VarUse into Call to capture additional context for diagnostics
+    Call { call_expr: ExprRef },
 }
 
-impl AnnotatedConstraint {
-    pub fn new(constraint: Constraint, use_location: SourceSpan) -> Self {
-        Self {
-            constraint,
-            use_location,
+impl Provenance {
+    fn promote_use_into_call(self, call_expr: ExprRef) -> Provenance {
+        match (&self, &*call_expr) {
+            (Self::VarUse { expr }, Expression::Call { callee, .. }) if expr == callee => {
+                Self::Call { call_expr }
+            }
+            _ => self
         }
     }
 
-    fn solve(&self, mapping: &Substitution) -> Result<(),Error> {
-        match self.constraint.try_solve(&mapping) {
-            ConstraintResolution::Satisfied => Ok(()),
-            _ => Err(Error::basic(
-                self.constraint.clone(),
-                self.constraint.type_var.apply(&mapping),
-                self.use_location.clone(),
-            ))
+    fn into_error(self, constraint: Constraint, mapping: &Substitution) -> Error {
+        let trait_bound = constraint.as_trait_bound().expect("Type equality case unimplemented");
+        let failing_type = trait_bound.type_var.apply(mapping);
+
+        match self {
+            Self::VarUse { expr } => Error::bound(
+                failing_type,
+                trait_bound.trait_.lexeme.clone(),
+                expr.location(),
+            ),
+            Self::Call { call_expr } => {
+                let callee = call_expr.callee().unwrap();
+                let callee_name = callee.variable_decl()
+                    .unwrap()
+                    .borrow()
+                    .name()
+                    .lexeme
+                    .clone();
+                let callee_type = callee.type_();
+
+                let argument_locations: Vec<_> = call_expr.arguments()
+                    .unwrap()
+                    .iter()
+                    .map(|a| a.location())
+                    .collect();
+
+                // figure out which parameter produced the type variable that failed the constraint
+                let failing_type_var = trait_bound.type_var.clone();
+
+                let mut failing_param_loc = None;
+                for (i, param_ty) in callee_type.parameter_types().enumerate() {
+                    if let Kind::InferenceVariable(ref tv) = **param_ty {
+                        if *tv == failing_type_var && i < argument_locations.len() {
+                            failing_param_loc = argument_locations.get(i).cloned();
+                            break;
+                        }
+                    }
+                }
+
+                Error::call(
+                    failing_type,
+                    trait_bound.trait_.lexeme.to_string(),
+                    failing_param_loc.unwrap(),
+                    callee.location(),
+                    callee_name,
+                    trait_bound.trait_.location.clone()
+                )
+            },
+        }
+    }
+}
+
+// in analyze_call_expression, we want to transform the provenance of all constraints
+// whose location matches callee.location
+// will this work?
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Display)]
+#[display(fmt = "{constraint}")]
+pub struct ConstraintWithProvenance {
+    constraint: Constraint,
+    provenance: Provenance,
+}
+
+impl ConstraintWithProvenance {
+    pub fn new_var_use(constraint: Constraint, expr: ExprRef) -> Self {
+        Self {
+            constraint,
+            provenance: Provenance::VarUse { expr },
+        }
+    }
+
+    fn transform_provenance_for_call(self, call_expr: ExprRef) -> Self {
+        Self {
+            constraint: self.constraint,
+            provenance: self.provenance.promote_use_into_call(call_expr),
+        }
+    }
+
+    fn into_error(&self, mapping: &Substitution) -> Error {
+        self.provenance.clone()
+            .into_error(self.constraint.clone(), mapping)
+    }
+
+    fn try_solve(&self, mapping: &mut Substitution) -> Result<ConstraintResolution,Error> {
+        match self.constraint.try_solve(mapping) {
+            ConstraintResolution::Failure => Err(self.into_error(mapping)),
+            resolution => Ok(resolution),
+        }
+    }
+
+    fn solve(&self, mapping: &mut Substitution) -> Result<(),Error> {
+        match self.try_solve(mapping) {
+            Ok(ConstraintResolution::Satisfied) => Ok(()),
+            _ => Err(self.into_error(mapping)),
         }
     }
 }
 
 pub struct ConstraintSet {
-    constraints: HashSet<AnnotatedConstraint>,
+    constraints: HashSet<ConstraintWithProvenance>,
 }
 
 impl ConstraintSet {
@@ -45,12 +136,27 @@ impl ConstraintSet {
         Self { constraints: HashSet::new() }
     }
 
-    fn add_constraint(&mut self, constraint: AnnotatedConstraint) {
-        self.constraints.insert(constraint);
+    fn transform_provenance_for_call(&mut self, call_expr: ExprRef) {
+        let old_set = std::mem::take(&mut self.constraints);
+        self.constraints = old_set.into_iter()
+            .map(|c| c.transform_provenance_for_call(call_expr.clone()))
+            .collect();
+    }
 
-        // XXX check for contradictions before adding
+    fn add_constraint(
+        &mut self, 
+        constraint: ConstraintWithProvenance, 
+        mapping: &mut Substitution) -> Result<(), Error>
+    {
+        // XXX first check for contradictions
         // XXX recursively add any implied constraints
-        // XXX solve as we add constraints?
+
+        let resolution = constraint.try_solve(mapping)?;
+        if resolution == ConstraintResolution::Unresolved {
+            self.constraints.insert(constraint);
+        }
+
+        Ok(())
     }
 
     /// Attempts to solve all constraints in the constraint set
@@ -58,7 +164,7 @@ impl ConstraintSet {
     /// # Errors
     ///
     /// If any constraint cannot be solved (i.e. it fails the check), it is returned as an error immediately.
-    fn solve_constraints(&mut self, mapping: &Substitution) -> Result<(), Error> {
+    fn solve_constraints(&mut self, mapping: &mut Substitution) -> Result<(), Error> {
         // solve constraints using a worklist and detect contradictions
         let mut queue: VecDeque<_> = self.constraints.drain().collect();
         let mut resolved = HashSet::new();
@@ -117,30 +223,42 @@ impl ConstraintEnvironment {
         }
     }
 
-    pub fn add_constraint(&mut self, constraint: AnnotatedConstraint) {
+    pub fn transform_provenance_for_call(&mut self, call_expr: ExprRef) {
         self.scopes
             .last_mut()
             .expect("Internal compiler error: constraints stack is empty")
-            .add_constraint(constraint)
+            .transform_provenance_for_call(call_expr);
+    }
+
+    pub fn add_constraint(
+        &mut self, 
+        constraint: ConstraintWithProvenance, 
+        mapping: &mut Substitution
+    ) -> Result<(), Error>
+    {
+        self.scopes
+            .last_mut()
+            .expect("Internal compiler error: constraints stack is empty")
+            .add_constraint(constraint, mapping)
     }
 
     /// Attempts to solve all constraints in the current scope
     /// If any constraint does not resolve to ConstraintResolution::Satisfied,
     /// an error is returned
-    pub fn solve_constraints(&mut self, type_env: &TypeEnvironment) -> Result<(), Error> {
+    pub fn solve_constraints(&mut self, mapping: &mut Substitution) -> Result<(), Error> {
         self.scopes
             .last_mut()
             .expect("Internal compiler error: constraints stack is empty")
-            .solve_constraints(type_env.substitution())
+            .solve_constraints(mapping)
     }
 }
 
 
 #[derive(Debug, Error, Diagnostic)]
-#[error("The trait bound '{0}: {1}' is not satisfied", failing_type, constraint.trait_.lexeme)]
-pub struct BasicError {
-    pub constraint: Constraint,
+#[error("The trait bound '{0}: {1}' is not satisfied", failing_type, trait_name)]
+pub struct BoundError {
     pub failing_type: Type,
+    pub trait_name: String,
     // the location of the use that generated the constraint
     #[label]
     pub use_location: SourceSpan,
@@ -164,19 +282,19 @@ pub struct CallError {
 #[error(transparent)]
 #[diagnostic(transparent)]
 pub enum Error {
-    Basic(BasicError),
+    Bound(BoundError),
     Call(CallError),
 }
 
 impl Error {
-    fn basic(
-        constraint: Constraint,
+    fn bound(
         failing_type: Type,
+        trait_name: String,
         use_location: SourceSpan, 
     ) -> Self {
-        Self::Basic(BasicError {
-            constraint,
+        Self::Bound(BoundError {
             failing_type,
+            trait_name,
             use_location,
         })
     }
@@ -196,67 +314,6 @@ impl Error {
             call_location,
             fn_name,
             fn_loc,
-        })
-    }
-
-    fn as_basic(self) -> Option<BasicError> {
-        match self {
-            Self::Basic(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-pub trait ConstrainedCallErrorContext<T> {
-    fn constrained_call_err_ctx(
-        self,
-        callee_decl: DeclRef,
-        callee_type: Type,
-        argument_locations: Vec<SourceSpan>,
-    ) -> Result<T,Error>;
-}
-
-impl<T> ConstrainedCallErrorContext<T> for Result<T,Error> {
-    // this embellishes a basic constraint error with additional diagnostic context
-    // related to a function call that failed
-    fn constrained_call_err_ctx(
-        self,
-        callee_decl: DeclRef,
-        callee_type: Type,
-        argument_locations: Vec<SourceSpan>,
-    ) -> Result<T,Error> {
-        self.map_err(|error| {
-            let basic_error = error.as_basic().unwrap();
-
-            // figure out which parameter has the type which failed the constraint
-            let failing_type_var = basic_error.constraint.type_var.clone();
-            let failing_param_type = basic_error.failing_type.clone();
-
-            let mut failing_param_loc = None;
-            for (i, param_ty) in callee_type.parameter_types().enumerate() {
-                if let Kind::InferenceVariable(ref tv) = **param_ty {
-                    if *tv == failing_type_var && i < argument_locations.len() {
-                        failing_param_loc = argument_locations.get(i).cloned();
-                        break;
-                    }
-                }
-            }
-
-            // find the 
-
-            // XXX instead of printing the failing_param_type, we really need to print the name of
-            // the parameter's type as it would appear in the source text
-            match failing_param_loc {
-                Some(failing_param_loc) => Error::call(
-                    failing_param_type,
-                    basic_error.constraint.trait_.lexeme.to_string(),
-                    failing_param_loc, 
-                    basic_error.use_location.clone(),
-                    callee_decl.borrow().name().lexeme.clone(),
-                    basic_error.constraint.trait_.location.clone(),
-                ),
-                None => Error::Basic(basic_error),
-            }
         })
     }
 }

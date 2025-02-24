@@ -97,14 +97,17 @@ pub enum Expression {
 }
 
 impl Expression {
-    pub fn type_(&self) -> Type {
+    pub fn callee(&self) -> Option<ExprRef> {
         match self {
-            Self::Binary{ type_, .. } => type_.clone(),
-            Self::Block { type_, .. } => type_.clone(),
-            Self::Call{ type_, .. } => type_.clone(),
-            Self::Literal(lit) => lit.type_.clone(),
-            Self::Unary {type_, .. } => type_.clone(),
-            Self::Variable{ type_, .. } => type_.clone(),
+            Self::Call { callee, .. } => Some(callee.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn arguments(&self) -> Option<&Vec<ExprRef>> {
+        match self {
+            Self::Call { arguments, .. } => Some(arguments),
+            _ => None,
         }
     }
 
@@ -117,6 +120,17 @@ impl Expression {
             | Self::Variable { location, .. }
             => location.clone(),
             Self::Literal(l) => l.location.clone(),
+        }
+    }
+
+    pub fn type_(&self) -> Type {
+        match self {
+            Self::Binary{ type_, .. } => type_.clone(),
+            Self::Block { type_, .. } => type_.clone(),
+            Self::Call{ type_, .. } => type_.clone(),
+            Self::Literal(lit) => lit.type_.clone(),
+            Self::Unary {type_, .. } => type_.clone(),
+            Self::Variable{ type_, .. } => type_.clone(),
         }
     }
 

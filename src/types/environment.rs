@@ -32,7 +32,7 @@ fn unify_inference_variable(var: &TypeVar, other: &Type, subst: &mut Substitutio
     }
 }
 
-fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Error> {
+pub fn unify(expected: Type, found: Type, subst: &mut Substitution) -> Result<(), Error> {
     // Normalize both types by applying the current substitution.
     let expected = expected.apply(subst);
     let found = found.apply(subst);
@@ -125,6 +125,10 @@ impl TypeEnvironment {
 
     pub fn substitution(&self) -> &Substitution {
         &self.substitution
+    }
+
+    pub fn substitution_mut(&mut self) -> &mut Substitution {
+        &mut self.substitution
     }
 
     fn fresh_from(&self, origin: usize) -> Type {

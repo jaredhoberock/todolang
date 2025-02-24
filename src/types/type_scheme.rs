@@ -25,7 +25,7 @@ impl TypeScheme {
         let mut constraints = HashSet::new();
         match (trait_name, &*type_) {
             (Some(trait_name), Kind::InferenceVariable(type_var)) => {
-                let constraint = Constraint::new(type_var.clone(), trait_name);
+                let constraint = Constraint::new_trait_bound(type_var.clone(), trait_name);
                 constraints.insert(constraint);
             },
             _ => (),
