@@ -8,10 +8,25 @@ use std::collections::VecDeque;
 use std::hash::Hash;
 use thiserror::Error;
 
-// Provenance records the reason a particular Constraint was instantiated
+// at the moment, the only provenance information we have for type equality constraints
+// is a location
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum Provenance {
-    // all trait bound constraints originate in some use of a variable
+struct TypeEqualityProvenance(SourceSpan);
+
+impl TypeEqualityProvenance {
+    fn into_error(self, type_eq: TypeEquality, mapping: &Substitution) -> Error {
+        Error::type_mismatch(
+            type_eq.expected.apply(mapping), 
+            type_eq.found.apply(mapping),
+            self.0
+        )
+    }
+}
+
+// all trait bound constraints originate in some use of a variable
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum TraitBoundProvenance {
+    // the use of some variable (i.e., an Expression::Variable) originated the trait bound constraints
     VarUse { expr: ExprRef },
 
     // some variables are used in call expressions. when this happens,
@@ -19,8 +34,8 @@ enum Provenance {
     Call { call_expr: ExprRef },
 }
 
-impl Provenance {
-    fn promote_use_into_call(self, call_expr: ExprRef) -> Provenance {
+impl TraitBoundProvenance {
+    fn promote_use_into_call(self, call_expr: ExprRef) -> TraitBoundProvenance {
         match (&self, &*call_expr) {
             (Self::VarUse { expr }, Expression::Call { callee, .. }) if expr == callee => {
                 Self::Call { call_expr }
@@ -29,8 +44,7 @@ impl Provenance {
         }
     }
 
-    fn into_error(self, constraint: Constraint, mapping: &Substitution) -> Error {
-        let trait_bound = constraint.as_trait_bound().expect("Type equality case unimplemented");
+    fn into_error(self, trait_bound: TraitBound, mapping: &Substitution) -> Error {
         let failing_type = trait_bound.type_var.apply(mapping);
 
         match self {
@@ -81,6 +95,34 @@ impl Provenance {
     }
 }
 
+// Provenance records the reason a particular Constraint was instantiated
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Provenance {
+    Eq(TypeEqualityProvenance),
+    Trait(TraitBoundProvenance),
+}
+
+impl Provenance {
+    fn promote_use_into_call(self, call_expr: ExprRef) -> Provenance {
+        match self {
+            Self::Trait(trait_bound_provenance) => Self::Trait(trait_bound_provenance.promote_use_into_call(call_expr)),
+            _ => self,
+        }
+    }
+
+    fn into_error(self, constraint: Constraint, mapping: &Substitution) -> Error {
+        match (self, constraint) {
+            (Self::Trait(trait_bound_provenance), Constraint::Trait(trait_bound)) => {
+                trait_bound_provenance.into_error(trait_bound, mapping)
+            },
+            (Self::Eq(provenance), Constraint::Eq(type_eq)) => {
+                provenance.into_error(type_eq, mapping)
+            },
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Display)]
 #[display(fmt = "{constraint}")]
 pub struct ConstraintWithProvenance {
@@ -90,9 +132,20 @@ pub struct ConstraintWithProvenance {
 
 impl ConstraintWithProvenance {
     pub fn new_var_use(constraint: Constraint, expr: ExprRef) -> Self {
+        let provenance = Provenance::Trait(TraitBoundProvenance::VarUse { 
+            expr 
+        });
         Self {
             constraint,
-            provenance: Provenance::VarUse { expr },
+            provenance,
+        }
+    }
+
+    pub fn new_type_equality(expected: Type, found: Type, location: SourceSpan) -> Self {
+        let provenance = Provenance::Eq(TypeEqualityProvenance(location));
+        Self {
+            constraint: Constraint::new_equality(expected, found),
+            provenance,
         }
     }
 
@@ -141,9 +194,9 @@ impl ConstraintSet {
 
     pub fn add_constraint(
         &mut self, 
-        constraint: ConstraintWithProvenance, 
-        mapping: &mut Substitution) -> Result<(), Error>
-    {
+        mapping: &mut Substitution, 
+        constraint: ConstraintWithProvenance
+    ) -> Result<(), Error> {
         // XXX first check for contradictions
         // XXX recursively add any implied constraints
 
@@ -153,6 +206,17 @@ impl ConstraintSet {
         }
 
         Ok(())
+    }
+
+    pub fn add_type_equality_constraint(
+        &mut self,
+        mapping: &mut Substitution,
+        expected: Type,
+        found: Type,
+        location: SourceSpan
+    ) -> Result<(), Error> {
+        let constraint = ConstraintWithProvenance::new_type_equality(expected, found, location);
+        self.add_constraint(mapping, constraint)
     }
 
     /// Attempts to solve all constraints in the constraint set
@@ -195,6 +259,15 @@ impl ConstraintSet {
 }
 
 #[derive(Debug, Error, Diagnostic)]
+#[error("Type mismatch: expected '{expected_ty}', found '{found_ty}'")]
+pub struct TypeMismatchError {
+    pub expected_ty: Type,
+    pub found_ty: Type,
+    #[label]
+    pub location: SourceSpan,
+}
+
+#[derive(Debug, Error, Diagnostic)]
 #[error("The trait bound '{0}: {1}' is not satisfied", failing_type, trait_name)]
 pub struct BoundError {
     pub failing_type: Type,
@@ -224,6 +297,7 @@ pub struct CallError {
 pub enum Error {
     Bound(BoundError),
     Call(CallError),
+    Type(TypeMismatchError),
 }
 
 impl Error {
@@ -254,6 +328,18 @@ impl Error {
             call_location,
             fn_name,
             fn_loc,
+        })
+    }
+
+    fn type_mismatch(
+        expected_ty: Type,
+        found_ty: Type,
+        location: SourceSpan
+    ) -> Self {
+        Self::Type(TypeMismatchError {
+            expected_ty,
+            found_ty,
+            location,
         })
     }
 }

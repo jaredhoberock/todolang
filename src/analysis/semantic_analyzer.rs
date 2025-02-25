@@ -174,9 +174,16 @@ impl SemanticAnalyzer {
         for arg in untyped_arguments {
             arguments.push(self.analyze_expression(&arg)?);
         }
-        let argument_types: Vec<_> = arguments.iter()
-            .map(|a| a.type_().clone())
-            .collect();
+
+        // add an equality constraint for each argument
+        for (p_ty, arg) in callee.type_().parameter_types().zip(arguments.iter()) {
+            self.unresolved_constraints.add_type_equality_constraint(
+                self.type_env.substitution_mut(),
+                *p_ty,
+                arg.type_(),
+                arg.location()
+            )?;
+        }
 
         let result_type = callee.type_().function_return_type();
 
@@ -188,16 +195,8 @@ impl SemanticAnalyzer {
             location: location.clone(),
         });
 
-        // before solving constraints, add additional context for constraints 
-        // generated from use of the callee
+        // add additional diagnostic context for constraints generated from use of the callee
         self.unresolved_constraints.transform_provenance_for_call(call_expr.clone());
-
-        // XXX introduce an equality constraint for each argument instead of calling unify
-
-        // unify types
-        let call_type = self.type_env.get_function(argument_types.clone(), result_type);
-        self.type_env.unify(callee.type_(), call_type)
-            .err_ctx(&location)?;
 
         Ok(call_expr)
     }
@@ -267,7 +266,7 @@ impl SemanticAnalyzer {
         // add constraints to the environment
         for c in constraints {
             let annotated = ConstraintWithProvenance::new_var_use(c, expr.clone());
-            self.unresolved_constraints.add_constraint(annotated, self.type_env.substitution_mut())?;
+            self.unresolved_constraints.add_constraint(self.type_env.substitution_mut(), annotated)?;
         }
 
         Ok(expr)
