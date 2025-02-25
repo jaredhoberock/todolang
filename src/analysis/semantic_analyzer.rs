@@ -7,16 +7,17 @@ use crate::ast::typed::ExprRef;
 use crate::ast::typed::LiteralValue as TypedLiteralValue;
 use crate::ast::typed::Literal as TypedLiteral;
 use crate::ast::typed::Statement as TypedStatement;
+use crate::ast::iterators::*;
 use crate::source_location::SourceSpan;
 use crate::token::Token;
 use crate::types::{TypeEnvironment, TypeScheme};
-use super::constraint_environment::{ConstraintEnvironment, ConstraintWithProvenance};
+use super::constraint_set::{ConstraintSet, ConstraintWithProvenance};
 use super::environment::Environment;
 use super::errors::*;
 
 struct SemanticAnalyzer {
-    constraint_env: ConstraintEnvironment,
     type_env: TypeEnvironment,
+    unresolved_constraints: ConstraintSet,
     env: Environment,
 }
 
@@ -29,8 +30,8 @@ impl SemanticAnalyzer {
             ("String", type_env.get_string()),
         ];
         Self {
-            constraint_env: ConstraintEnvironment::new(),
             type_env, 
+            unresolved_constraints: ConstraintSet::new(),
             env: Environment::new_with_builtin_types(builtin_types),
         }
     }
@@ -42,9 +43,7 @@ impl SemanticAnalyzer {
         f: impl FnOnce(&mut Self) -> Result<T,Error>,
     ) -> Result<T,Error> {
         self.env.enter_scope();
-        self.constraint_env.enter_scope();
         let result = f(self);
-        self.constraint_env.exit_scope();
         self.env.exit_scope();
         result
     }
@@ -117,9 +116,6 @@ impl SemanticAnalyzer {
 
         self.type_env.unify(input_ty, rhs_ty)
             .binop_err_ctx(op.clone(), rhs.type_defining_location())?;
-
-        // solve constraints
-        self.constraint_env.solve_constraints(&mut self.type_env.substitution_mut())?;
 
         Ok(ExprRef::new(TypedExpression::Binary {
             lhs,
@@ -194,7 +190,7 @@ impl SemanticAnalyzer {
 
         // before solving constraints, add additional context for constraints 
         // generated from use of the callee
-        self.constraint_env.transform_provenance_for_call(call_expr.clone());
+        self.unresolved_constraints.transform_provenance_for_call(call_expr.clone());
 
         // XXX introduce an equality constraint for each argument instead of calling unify
 
@@ -202,8 +198,6 @@ impl SemanticAnalyzer {
         let call_type = self.type_env.get_function(argument_types.clone(), result_type);
         self.type_env.unify(callee.type_(), call_type)
             .err_ctx(&location)?;
-
-        self.constraint_env.solve_constraints(&mut self.type_env.substitution_mut())?;
 
         Ok(call_expr)
     }
@@ -273,7 +267,7 @@ impl SemanticAnalyzer {
         // add constraints to the environment
         for c in constraints {
             let annotated = ConstraintWithProvenance::new_var_use(c, expr.clone());
-            self.constraint_env.add_constraint(annotated, self.type_env.substitution_mut())?;
+            self.unresolved_constraints.add_constraint(annotated, self.type_env.substitution_mut())?;
         }
 
         Ok(expr)
@@ -499,11 +493,22 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_module(&mut self, module: &Module) -> Result<TypedModule, Error> {
+        // infer types
         let mut statements = Vec::new();
         for stmt in &module.statements {
             statements.push(self.analyze_statement(&stmt)?);
         }
-        Ok(TypedModule{ statements })
+        let mut typed_module = TypedModule{ statements };
+
+        // solve constraints
+        self.unresolved_constraints.solve_constraints(self.type_env.substitution_mut())?;
+
+        // fully resolve types
+        let _ = typed_module.for_each_expression(|expr| {
+            expr.apply_to_type(self.type_env.substitution());
+        });
+
+        Ok(typed_module)
     }
 }
 

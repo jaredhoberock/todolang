@@ -1,12 +1,12 @@
 use crate::source_location::SourceSpan;
 use crate::token::Token;
-use crate::types::{Type, TypeScheme};
+use crate::types::{Substitution, Type, TypeScheme};
 pub use super::untyped::BinOp;
 pub use super::untyped::BinOpKind;
 pub use super::untyped::Constraint;
 pub use super::untyped::UnOp;
 pub use super::untyped::UnOpKind;
-use std::cell::{Ref,RefCell};
+use std::cell::{Ref,RefCell,RefMut};
 use std::hash::{Hash,Hasher};
 use std::ops::Deref;
 use std::rc::Rc;
@@ -28,12 +28,18 @@ pub struct Literal {
 // Constraints originate in Expressions
 // Therefore, provenance tracking for constraints requires
 // storing references to expression nodes
+// However, each ExprRef in the AST is unique
 #[derive(Debug, Clone)]
 pub struct ExprRef(Rc<Expression>);
 
 impl ExprRef {
     pub fn new(expr: Expression) -> Self {
         Self(Rc::new(expr))
+    }
+
+    pub fn get_mut(&mut self) -> &mut Expression {
+        Rc::get_mut(&mut self.0)
+            .expect("Internal compiler error: ExprRef is unexpectedly shared at mutation time")
     }
 }
 
@@ -97,6 +103,21 @@ pub enum Expression {
 }
 
 impl Expression {
+    // mutates self.type_ by applying the given mapping to self.type_
+    // Note that this does not recurse into subexpressions, it simply
+    // mutates self.type_
+    pub fn apply_to_type(&mut self, mapping: &Substitution) {
+        match self {
+            Self::Binary { type_, .. }
+            | Self::Block { type_, .. }
+            | Self::Call { type_, .. }
+            | Self::Unary { type_, .. }
+            | Self::Variable { type_, .. }
+            => *type_ = type_.apply(mapping),
+            Self::Literal(_) => {},
+        }
+    }
+
     pub fn callee(&self) -> Option<ExprRef> {
         match self {
             Self::Call { callee, .. } => Some(callee.clone()),
@@ -175,6 +196,10 @@ impl DeclRef {
 
     pub fn borrow(&self) -> Ref<Declaration> {
         self.0.borrow()
+    }
+
+    pub fn borrow_mut(&mut self) -> RefMut<Declaration> {
+        self.0.borrow_mut()
     }
 
     // provides the definition for a Declaration::Forward by mutating

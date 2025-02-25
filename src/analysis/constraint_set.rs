@@ -81,10 +81,6 @@ impl Provenance {
     }
 }
 
-// in analyze_call_expression, we want to transform the provenance of all constraints
-// whose location matches callee.location
-// will this work?
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Display)]
 #[display(fmt = "{constraint}")]
 pub struct ConstraintWithProvenance {
@@ -132,18 +128,18 @@ pub struct ConstraintSet {
 }
 
 impl ConstraintSet {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self { constraints: HashSet::new() }
     }
 
-    fn transform_provenance_for_call(&mut self, call_expr: ExprRef) {
+    pub fn transform_provenance_for_call(&mut self, call_expr: ExprRef) {
         let old_set = std::mem::take(&mut self.constraints);
         self.constraints = old_set.into_iter()
             .map(|c| c.transform_provenance_for_call(call_expr.clone()))
             .collect();
     }
 
-    fn add_constraint(
+    pub fn add_constraint(
         &mut self, 
         constraint: ConstraintWithProvenance, 
         mapping: &mut Substitution) -> Result<(), Error>
@@ -164,7 +160,7 @@ impl ConstraintSet {
     /// # Errors
     ///
     /// If any constraint cannot be solved (i.e. it fails the check), it is returned as an error immediately.
-    fn solve_constraints(&mut self, mapping: &mut Substitution) -> Result<(), Error> {
+    pub fn solve_constraints(&mut self, mapping: &mut Substitution) -> Result<(), Error> {
         // solve constraints using a worklist and detect contradictions
         let mut queue: VecDeque<_> = self.constraints.drain().collect();
         let mut resolved = HashSet::new();
@@ -197,62 +193,6 @@ impl ConstraintSet {
         Ok(())
     }
 }
-
-pub struct ConstraintEnvironment {
-    scopes: Vec<ConstraintSet>,
-}
-
-impl ConstraintEnvironment {
-    pub fn new() -> Self {
-        Self { 
-            scopes: vec![ConstraintSet::new()],
-        }
-    }
-
-    pub fn enter_scope(&mut self) {
-        self.scopes.push(ConstraintSet::new());
-    }
-
-    pub fn exit_scope(&mut self) {
-        let scope = self.scopes
-            .pop()
-            .expect("Internal compiler error: constraints stack is empty");
-
-        if !scope.constraints.is_empty() {
-            panic!("Internal compiler error: unresolved constraints at end of scope");
-        }
-    }
-
-    pub fn transform_provenance_for_call(&mut self, call_expr: ExprRef) {
-        self.scopes
-            .last_mut()
-            .expect("Internal compiler error: constraints stack is empty")
-            .transform_provenance_for_call(call_expr);
-    }
-
-    pub fn add_constraint(
-        &mut self, 
-        constraint: ConstraintWithProvenance, 
-        mapping: &mut Substitution
-    ) -> Result<(), Error>
-    {
-        self.scopes
-            .last_mut()
-            .expect("Internal compiler error: constraints stack is empty")
-            .add_constraint(constraint, mapping)
-    }
-
-    /// Attempts to solve all constraints in the current scope
-    /// If any constraint does not resolve to ConstraintResolution::Satisfied,
-    /// an error is returned
-    pub fn solve_constraints(&mut self, mapping: &mut Substitution) -> Result<(), Error> {
-        self.scopes
-            .last_mut()
-            .expect("Internal compiler error: constraints stack is empty")
-            .solve_constraints(mapping)
-    }
-}
-
 
 #[derive(Debug, Error, Diagnostic)]
 #[error("The trait bound '{0}: {1}' is not satisfied", failing_type, trait_name)]
