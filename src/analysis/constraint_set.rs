@@ -11,14 +11,18 @@ use thiserror::Error;
 // at the moment, the only provenance information we have for type equality constraints
 // is a location
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct TypeEqualityProvenance(SourceSpan);
+struct TypeEqualityProvenance {
+    expected_at: Option<SourceSpan>,
+    found_at: SourceSpan,
+}
 
 impl TypeEqualityProvenance {
     fn into_error(self, type_eq: TypeEquality, mapping: &Substitution) -> Error {
         Error::type_mismatch(
             type_eq.expected.apply(mapping), 
+            self.expected_at,
             type_eq.found.apply(mapping),
-            self.0
+            self.found_at,
         )
     }
 }
@@ -141,8 +145,11 @@ impl ConstraintWithProvenance {
         }
     }
 
-    pub fn new_type_equality(expected: Type, found: Type, location: SourceSpan) -> Self {
-        let provenance = Provenance::Eq(TypeEqualityProvenance(location));
+    pub fn new_type_equality(expected: Type, found: Type, found_at: SourceSpan) -> Self {
+        let provenance = Provenance::Eq(TypeEqualityProvenance {
+            expected_at: None,
+            found_at
+        });
         Self {
             constraint: Constraint::new_equality(expected, found),
             provenance,
@@ -262,9 +269,11 @@ impl ConstraintSet {
 #[error("Type mismatch: expected '{expected_ty}', found '{found_ty}'")]
 pub struct TypeMismatchError {
     pub expected_ty: Type,
+    #[label("expected type '{expected_ty}' found here")]
+    pub expected_at: Option<SourceSpan>,
     pub found_ty: Type,
-    #[label]
-    pub location: SourceSpan,
+    #[label(primary "expected '{expected_ty}', found '{found_ty}'")]
+    pub found_at: SourceSpan,
 }
 
 #[derive(Debug, Error, Diagnostic)]
@@ -333,13 +342,15 @@ impl Error {
 
     fn type_mismatch(
         expected_ty: Type,
+        expected_at: Option<SourceSpan>,
         found_ty: Type,
-        location: SourceSpan
+        found_at: SourceSpan,
     ) -> Self {
         Self::Type(TypeMismatchError {
             expected_ty,
+            expected_at,
             found_ty,
-            location,
+            found_at,
         })
     }
 }
