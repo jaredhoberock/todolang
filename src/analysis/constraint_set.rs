@@ -145,10 +145,10 @@ impl ConstraintWithProvenance {
         }
     }
 
-    pub fn new_type_equality(expected: Type, found: Type, found_at: SourceSpan) -> Self {
+    pub fn new_type_equality(expected: Type, expected_at: Option<SourceSpan>, found: Type, found_at: SourceSpan) -> Self {
         let provenance = Provenance::Eq(TypeEqualityProvenance {
-            expected_at: None,
-            found_at
+            expected_at,
+            found_at,
         });
         Self {
             constraint: Constraint::new_equality(expected, found),
@@ -219,10 +219,11 @@ impl ConstraintSet {
         &mut self,
         mapping: &mut Substitution,
         expected: Type,
+        expected_at: Option<SourceSpan>,
         found: Type,
-        location: SourceSpan
+        found_at: SourceSpan
     ) -> Result<(), Error> {
-        let constraint = ConstraintWithProvenance::new_type_equality(expected, found, location);
+        let constraint = ConstraintWithProvenance::new_type_equality(expected, expected_at, found, found_at);
         self.add_constraint(mapping, constraint)
     }
 

@@ -106,6 +106,11 @@ impl SemanticAnalyzer {
             },
         };
 
+        // XXX instead of using unify in this function, we need to introduce trait bound constraints
+        //     we need to constrain lhs_ty & rhs_ty to impl some trait such as Add
+        //     result_ty then needs to be a fresh type constrained to be equal to some 
+        //     associated type of the trait such as Add::Output
+
         // unify inputs
         // XXX i think the way i'm using unify is not correct
         //     basically all we want to do is introduce constraints for the particular operator
@@ -180,6 +185,7 @@ impl SemanticAnalyzer {
             self.unresolved_constraints.add_type_equality_constraint(
                 self.type_env.substitution_mut(),
                 *p_ty,
+                None,
                 arg.type_(),
                 arg.location()
             )?;
@@ -230,8 +236,13 @@ impl SemanticAnalyzer {
         };
 
         // add a unification constraint
-        self.type_env.unify(expected_type.clone(), operand.type_().clone())
-            .err_ctx(&location)?;
+        self.unresolved_constraints.add_type_equality_constraint(
+            self.type_env.substitution_mut(),
+            expected_type.clone(),
+            None,
+            operand.type_(),
+            location.clone(),
+        )?;
 
         Ok(ExprRef::new(TypedExpression::Unary {
             op: op.clone(),
@@ -412,11 +423,11 @@ impl SemanticAnalyzer {
             let (return_type, _) = return_type_scheme.instantiate(&slf.type_env);
 
             // check the return type against the body
-            slf.type_env.unify(return_type, body.type_())
-                .type_mismatch_err_ctx(
-                    untyped_return_type.location(),
-                    body.type_defining_location()
-                )?;
+            slf.unresolved_constraints.add_type_equality_constraint(
+                slf.type_env.substitution_mut(),
+                return_type, Some(untyped_return_type.location()),
+                body.type_(), body.type_defining_location(),
+            )?;
 
             // define the function
             result.define(TypedDeclaration::Function {
@@ -451,7 +462,7 @@ impl SemanticAnalyzer {
         &mut self, 
         name: &Token, 
         ascription: &TypeAscription,
-        initializer: &Expression, 
+        untyped_initializer: &Expression, 
         location: SourceSpan
     ) -> Result<DeclRef, Error> {
         // first check that the name is unique
@@ -460,18 +471,22 @@ impl SemanticAnalyzer {
 
         let type_scheme = self.analyze_type_ascription(ascription)?;
 
-        let typed_initializer = self.analyze_expression(&initializer)?;
+        let initializer = self.analyze_expression(&untyped_initializer)?;
 
         // instantiate the variable's ascribed type
         let (expected_ty, _) = type_scheme.instantiate(&self.type_env);
 
-        // unify with the intializer's type
-        self.type_env.unify(expected_ty, typed_initializer.type_())
-            .err_ctx(&location)?;
+        // check the initializer's type against the ascription
+        self.unresolved_constraints.add_type_equality_constraint(
+            self.type_env.substitution_mut(),
+            expected_ty, Some(ascription.expr.location()),
+            initializer.type_(), 
+            initializer.location(),
+        )?;
 
         let decl = DeclRef::new(TypedDeclaration::Variable{
             name: name.clone(),
-            initializer: typed_initializer,
+            initializer,
             type_scheme,
             location: location.clone(),
         });

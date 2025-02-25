@@ -1,0 +1,10 @@
+[0m[1m[38;5;9merror[0m[1m: Type mismatch: expected 'Number', found 'String'[0m
+  [0m[34m┌─[0m tests/todo/4_1_variable_declaration_with_mismatched_type.todo:1:17
+  [0m[34m│[0m
+[0m[34m1[0m [0m[34m│[0m var x: Number = [0m[31m"Hello!"[0m;
+  [0m[34m│[0m        [0m[34m------[0m   [0m[31m^^^^^^^^[0m
+  [0m[34m│[0m        [0m[34m│[0m        [0m[34m│[0m
+  [0m[34m│[0m        [0m[34m│[0m        [0m[34mexpected 'Number', found 'String'[0m
+  [0m[34m│[0m        [0m[34mexpected type 'Number' found here[0m
+
+
