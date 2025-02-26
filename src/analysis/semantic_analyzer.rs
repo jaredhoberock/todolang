@@ -191,14 +191,14 @@ impl SemanticAnalyzer {
             )?;
         }
 
-        let result_type = callee.type_().function_return_type();
+        let type_ = callee.type_().function_return_type();
 
         // create AST for the call
         let call_expr = ExprRef::new(TypedExpression::Call {
-            callee: callee.clone(),
+            callee,
             arguments,
-            type_: result_type,
-            location: location.clone(),
+            type_,
+            location,
         });
 
         // add additional diagnostic context for constraints generated from use of the callee
