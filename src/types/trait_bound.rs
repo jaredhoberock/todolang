@@ -1,7 +1,7 @@
 use crate::token::Token;
 use derive_more::Display;
 use std::hash::{Hash, Hasher};
-use super::{Kind, Substitution, TypeVar};
+use super::{Kind, Substitution, TypeEnvironment, TypeVar};
 
 #[derive(Clone, Debug, Display)]
 #[display(fmt = "{type_var}: {trait_}")]
@@ -26,6 +26,17 @@ impl Hash for TraitBound {
 }
 
 impl TraitBound {
+    fn new(type_var: TypeVar, trait_: Token) -> Self {
+        Self {
+            type_var,
+            trait_,
+        }
+    }
+
+    pub fn new_generic(env: &TypeEnvironment, trait_: Token) -> Self {
+        Self::new(env.generic().as_type_var().cloned().unwrap(), trait_)
+    }
+
     pub fn apply(&self, mapping: &Substitution) -> Self {
         let new_tv = self.type_var
             .apply(mapping)

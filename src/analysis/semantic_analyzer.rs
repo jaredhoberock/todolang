@@ -10,7 +10,7 @@ use crate::ast::typed::Statement as TypedStatement;
 use crate::ast::iterators::*;
 use crate::source_location::SourceSpan;
 use crate::token::Token;
-use crate::types::{TypeEnvironment, TypeScheme};
+use crate::types::{TraitBound, TypeEnvironment, TypeScheme};
 use super::constraint_set::{ConstraintSet, ConstraintWithProvenance};
 use super::environment::Environment;
 use super::errors::*;
@@ -261,8 +261,8 @@ impl SemanticAnalyzer {
             .get_variable(&name.lexeme)
             .err_ctx(&location)?;
 
-        // instantiate the variable's type and constraints
-        let (type_, constraints) = decl.borrow()
+        // instantiate the variable's type and trait bounds
+        let (type_, bounds) = decl.borrow()
             .type_scheme()
             .instantiate(&self.type_env);
 
@@ -275,8 +275,9 @@ impl SemanticAnalyzer {
         });
 
         // add constraints to the environment
-        for c in constraints {
-            let annotated = ConstraintWithProvenance::new_var_use(c, expr.clone());
+        for bound in bounds {
+            let constraint = crate::types::Constraint::new_trait_bound(bound);
+            let annotated = ConstraintWithProvenance::new_var_use(constraint, expr.clone());
             self.unresolved_constraints.add_constraint(self.type_env.substitution_mut(), annotated)?;
         }
 
@@ -331,11 +332,12 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_type_parameter(&mut self, param: &TypeParameter) -> Result<DeclRef, Error> {
-        // create a generic (universally quantified) variable with constraints
-        let type_scheme = TypeScheme::new_generic(
-            &self.type_env,
-            param.constraint.as_ref().map(|c| c.name.clone())
-        );
+        // create trait bound
+        let trait_bound = param.constraint.as_ref()
+            .map(|c| TraitBound::new_generic(&self.type_env, c.name.clone()));
+
+        // create a new type scheme with the trait bound
+        let type_scheme = TypeScheme::new_bounded(&self.type_env, trait_bound);
 
         let result = DeclRef::new(TypedDeclaration::TypeParameter {
             name: param.name.clone(),

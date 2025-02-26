@@ -1,36 +1,38 @@
-use crate::token::Token;
 use std::collections::HashSet;
-use super::{Constraint, Kind, Type, TypeEnvironment};
+use super::{TraitBound, Type, TypeEnvironment};
 
 #[derive(Clone, Debug)]
 pub struct TypeScheme {
   pub type_: Type,
-  pub constraints: HashSet<Constraint>,
+  pub bounds: HashSet<TraitBound>,
 }
 
 impl TypeScheme {
-    pub fn new(type_: Type, constraints: HashSet<Constraint>) -> Self {
+    fn new(type_: Type, bounds: HashSet<TraitBound>) -> Self {
         Self {
             type_,
-            constraints,
+            bounds,
         }
     }
 
-    pub fn new_unconstrained(type_: Type) -> Self {
+    pub fn new_unbounded(type_: Type) -> Self {
         Self::new(type_, HashSet::new())
     }
 
-    pub fn new_generic(env: &TypeEnvironment, trait_name: Option<Token>) -> Self {
-        let type_ = env.generic();
-        let mut constraints = HashSet::new();
-        match (trait_name, &*type_) {
-            (Some(trait_name), Kind::InferenceVariable(type_var)) => {
-                let constraint = Constraint::new_trait_bound(type_var.clone(), trait_name);
-                constraints.insert(constraint);
+    pub fn new_bounded(env: &TypeEnvironment, trait_bound: Option<TraitBound>) -> Self {
+        match trait_bound {
+            Some(trait_bound) => {
+                // the TraitBound's type var as our generic polytype
+                let type_ = trait_bound.type_var.as_type();
+
+                // Create a HashSet with a single TraitBound
+                let mut bounds = HashSet::new();
+                bounds.insert(trait_bound);
+                Self::new(type_, bounds)
             },
-            _ => (),
+            // otherwise, create an unbounded type scheme with a fresh generic type
+            _ => Self::new_unbounded(env.generic())
         }
-        Self::new(type_, constraints)
     }
   
     pub fn new_function(env: &TypeEnvironment, parameters: Vec<TypeScheme>, result: TypeScheme) -> Self {
@@ -43,28 +45,28 @@ impl TypeScheme {
         // build the function type
         let function_type = env.get_function(parameter_types, result.type_);
   
-        // combine constraints from all parameters and the result
-        let mut constraints: HashSet<Constraint> = HashSet::new();
+        // combine bounds from all parameters and the result
+        let mut bounds: HashSet<TraitBound> = HashSet::new();
         for scheme in parameters {
-            constraints.extend(scheme.constraints);
+            bounds.extend(scheme.bounds);
         }
-        constraints.extend(result.constraints);
+        bounds.extend(result.bounds);
   
-        Self::new(function_type, constraints)
+        Self::new(function_type, bounds)
     }
 
-    pub fn instantiate(&self, env: &TypeEnvironment) -> (Type, HashSet<Constraint>) {
+    pub fn instantiate(&self, env: &TypeEnvironment) -> (Type, HashSet<TraitBound>) {
         // first instantiate the type
         let (ty, mapping) = env.instantiate(self.type_);
   
-        // apply the mapping to each constraint
-        let instantiated_constraints: HashSet<Constraint> = self.constraints
+        // apply the mapping to each bound
+        let instantiated_bounds: HashSet<TraitBound> = self.bounds
             .clone()
             .into_iter()
-            .map(|constraint| constraint.apply(&mapping))
+            .map(|bound| bound.apply(&mapping))
             .collect();
 
-        (ty, instantiated_constraints)
+        (ty, instantiated_bounds)
     }
 
     /// Given a monotype and its associated constraints, produces a generalized
@@ -73,16 +75,16 @@ impl TypeScheme {
     /// This is essentially the inverse of `instantiate`.
     ///
     /// `env` is the type environment used for generalization.
-    pub fn generalized_from(env: &TypeEnvironment, monotype: Type, constraints: HashSet<Constraint>) -> Self {
+    pub fn generalized_from(env: &TypeEnvironment, monotype: Type, bounds: HashSet<TraitBound>) -> Self {
         // generalize the monotype
         let (polytype, mapping) = env.generalize(monotype);
 
-        // apply the mapping to each constraint
-        let generalized_constraints: HashSet<Constraint> = constraints
+        // apply the mapping to each bound
+        let generalized_bounds: HashSet<TraitBound> = bounds
             .into_iter()
-            .map(|constraint| constraint.apply(&mapping))
+            .map(|bound| bound.apply(&mapping))
             .collect();
 
-        Self::new(polytype, generalized_constraints)
+        Self::new(polytype, generalized_bounds)
     }
 }

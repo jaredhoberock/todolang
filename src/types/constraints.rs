@@ -1,7 +1,6 @@
-use crate::token::Token;
 use derive_more::Display;
 use std::hash::Hash;
-use super::{Substitution, TraitBound, Type, TypeVar, unify};
+use super::{Substitution, TraitBound, Type, unify};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ConstraintResolution {
@@ -41,8 +40,8 @@ pub enum Constraint {
 }
 
 impl Constraint {
-    pub fn new_trait_bound(type_var: TypeVar, trait_: Token) -> Self {
-        Self::Trait(TraitBound { type_var, trait_ })
+    pub fn new_trait_bound(trait_bound: TraitBound) -> Self {
+        Self::Trait(trait_bound)
     }
 
     pub fn new_equality(expected: Type, found: Type) -> Self {

@@ -74,7 +74,7 @@ impl Environment {
     pub fn new_with_builtin_types(types: Vec<(&str, Type)>) -> Self {
         let mut env = Environment::new();
         for (name, ty) in types {
-            let ts = TypeScheme::new_unconstrained(ty);
+            let ts = TypeScheme::new_unbounded(ty);
             // XXX the entry for name should actually be a type type
             //     i.e., the type of the `String` type is `type`, not `String`
             env.insert(name, ts.into()).ok();
