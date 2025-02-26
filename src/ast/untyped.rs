@@ -172,14 +172,14 @@ impl TypeAscription {
 }
 
 #[derive(Debug, Clone)]
-pub struct Constraint {
+pub struct TraitBound {
     pub name: Token,
 }
 
 #[derive(Debug)]
 pub struct TypeParameter {
     pub name: Token,
-    pub constraint: Option<Constraint>,
+    pub trait_bound: Option<TraitBound>,
 }
 
 impl TypeParameter {

@@ -517,24 +517,24 @@ impl<'a> Parser<'a> {
         Ok(TypeExpression{ identifier: self.identifier()? })
     }
 
-    // constraint := identifier
-    fn constraint(&mut self) -> Result<Constraint, ParseError> {
-        Ok(Constraint{ name: self.identifier()? })
+    // trait_bound := identifier
+    fn trait_bound(&mut self) -> Result<TraitBound, ParseError> {
+        Ok(TraitBound{ name: self.identifier()? })
     }
 
-    // type_parameter := identifier ( ":" constraint )?
+    // type_parameter := identifier ( ":" trait_bound )?
     #[restore_state_on_err]
     fn type_parameter(&mut self) -> Result<TypeParameter, ParseError> {
         let name = self.identifier()?;
 
-        let mut constraint = None;
+        let mut trait_bound = None;
         if self.token(TokenKind::Colon).is_ok() {
-            let c = self.constraint()
-                .map_err(ParseError::format_message("{} after ':' in constraint"))?;
-            constraint = Some(c);
+            let tb = self.trait_bound()
+                .map_err(ParseError::format_message("{} after ':' in trait bound"))?;
+            trait_bound = Some(tb);
         }
 
-        Ok(TypeParameter { name, constraint })
+        Ok(TypeParameter { name, trait_bound })
     }
 
     // type_parameter_list := "<" type_parameter ( "," type_parameter)* ">"

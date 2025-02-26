@@ -3,7 +3,6 @@ use crate::token::Token;
 use crate::types::{Substitution, Type, TypeScheme};
 pub use super::untyped::BinOp;
 pub use super::untyped::BinOpKind;
-pub use super::untyped::Constraint;
 pub use super::untyped::UnOp;
 pub use super::untyped::UnOpKind;
 use std::cell::{Ref,RefCell,RefMut};

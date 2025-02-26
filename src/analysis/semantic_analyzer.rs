@@ -1,4 +1,3 @@
-use crate::ast::untyped::*;
 use crate::ast::typed::Declaration as TypedDeclaration;
 use crate::ast::typed::DeclRef;
 use crate::ast::typed::Module as TypedModule;
@@ -7,6 +6,8 @@ use crate::ast::typed::ExprRef;
 use crate::ast::typed::LiteralValue as TypedLiteralValue;
 use crate::ast::typed::Literal as TypedLiteral;
 use crate::ast::typed::Statement as TypedStatement;
+use crate::ast::untyped::TraitBound as UntypedTraitBound;
+use crate::ast::untyped::*;
 use crate::ast::iterators::*;
 use crate::source_location::SourceSpan;
 use crate::token::Token;
@@ -331,10 +332,18 @@ impl SemanticAnalyzer {
         }
     }
 
+    fn analyze_trait_bound(&mut self, untyped_trait_bound: &UntypedTraitBound) -> Result<TraitBound, Error> {
+        let trait_bound = TraitBound::new_generic(
+            &self.type_env, 
+            untyped_trait_bound.name.clone());
+        Ok(trait_bound)
+    }
+
     fn analyze_type_parameter(&mut self, param: &TypeParameter) -> Result<DeclRef, Error> {
-        // create trait bound
-        let trait_bound = param.constraint.as_ref()
-            .map(|c| TraitBound::new_generic(&self.type_env, c.name.clone()));
+        let trait_bound = match &param.trait_bound {
+            Some(tb) => Some(self.analyze_trait_bound(&tb)?),
+            None => None,
+        };
 
         // create a new type scheme with the trait bound
         let type_scheme = TypeScheme::new_bounded(&self.type_env, trait_bound);
