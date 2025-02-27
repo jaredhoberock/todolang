@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use super::impl_environment::ImplEnvironment;
 use super::types::*;
 use thiserror::Error;
 
@@ -113,6 +114,7 @@ fn instantiate(
 pub struct TypeEnvironment {
     arena: TypeArena,
     substitution: Substitution,
+    impls: ImplEnvironment,
 }
 
 impl TypeEnvironment {
@@ -120,6 +122,7 @@ impl TypeEnvironment {
         Self { 
             arena: TypeArena::new(),
             substitution: Substitution::new(),
+            impls: ImplEnvironment::new(),
         }
     }
 
@@ -173,11 +176,6 @@ impl TypeEnvironment {
         (result, mapping)
     }
 
-    pub fn instantiate_and_unify(&mut self, polymorphic_t1: Type, t2: Type) -> Result<(), Error> {
-        let (t1,_) = self.instantiate(polymorphic_t1);
-        return self.unify(t1, t2)
-    }
-
     /// This is the dual operation of `instantiate`
     pub fn generalize(&self, monotype: Type) -> (Type, Substitution) {
         // find free type variables in the monotype
@@ -195,5 +193,13 @@ impl TypeEnvironment {
 
         let generalized = monotype.apply(&mapping);
         (generalized, mapping)
+    }
+
+    pub fn impl_env_mut(&mut self) -> &mut ImplEnvironment {
+        &mut self.impls
+    }
+
+    pub fn impl_env(&self) -> &ImplEnvironment {
+        &self.impls
     }
 }

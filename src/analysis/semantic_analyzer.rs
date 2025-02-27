@@ -24,12 +24,17 @@ struct SemanticAnalyzer {
 
 impl SemanticAnalyzer {
     pub fn new() -> Self {
-        let type_env = TypeEnvironment::new();
+        let mut type_env = TypeEnvironment::new();
         let builtin_types = vec![
             ("Bool", type_env.get_bool()),
             ("Number", type_env.get_number()),
             ("String", type_env.get_string()),
         ];
+
+        // introduce impls for builtin types
+        let num_ty = type_env.get_number();
+        type_env.impl_env_mut().add_impl("Add".to_string(), num_ty);
+
         Self {
             type_env, 
             unresolved_constraints: ConstraintSet::new(),
@@ -184,7 +189,7 @@ impl SemanticAnalyzer {
         // add an equality constraint for each argument
         for (p_ty, arg) in callee.type_().parameter_types().zip(arguments.iter()) {
             self.unresolved_constraints.add_type_equality_constraint(
-                self.type_env.substitution_mut(),
+                &mut self.type_env,
                 *p_ty,
                 None,
                 arg.type_(),
@@ -238,7 +243,7 @@ impl SemanticAnalyzer {
 
         // add a unification constraint
         self.unresolved_constraints.add_type_equality_constraint(
-            self.type_env.substitution_mut(),
+            &mut self.type_env,
             expected_type.clone(),
             None,
             operand.type_(),
@@ -265,7 +270,7 @@ impl SemanticAnalyzer {
         // instantiate the variable's type and trait bounds
         let (type_, bounds) = decl.borrow()
             .type_scheme()
-            .instantiate(&self.type_env);
+            .instantiate(&mut self.type_env);
 
         let expr = ExprRef::new(TypedExpression::Variable {
             name: name.clone(),
@@ -278,7 +283,7 @@ impl SemanticAnalyzer {
         // add constraints to the environment
         for bound in bounds {
             self.unresolved_constraints.add_trait_bound_constraint(
-                self.type_env.substitution_mut(),
+                &mut self.type_env,
                 bound, 
                 expr.clone())?;
         }
@@ -432,11 +437,11 @@ impl SemanticAnalyzer {
             let body = slf.analyze_expression(&untyped_body)?;
 
             // instantiate the return type
-            let (return_type, _) = return_type_scheme.instantiate(&slf.type_env);
+            let (return_type, _) = return_type_scheme.instantiate(&mut slf.type_env);
 
             // check the return type against the body
             slf.unresolved_constraints.add_type_equality_constraint(
-                slf.type_env.substitution_mut(),
+                &mut slf.type_env,
                 return_type, Some(untyped_return_type.location()),
                 body.type_(), body.type_defining_location(),
             )?;
@@ -486,11 +491,11 @@ impl SemanticAnalyzer {
         let initializer = self.analyze_expression(&untyped_initializer)?;
 
         // instantiate the variable's ascribed type
-        let (expected_ty, _) = type_scheme.instantiate(&self.type_env);
+        let (expected_ty, _) = type_scheme.instantiate(&mut self.type_env);
 
         // check the initializer's type against the ascription
         self.unresolved_constraints.add_type_equality_constraint(
-            self.type_env.substitution_mut(),
+            &mut self.type_env,
             expected_ty, Some(ascription.expr.location()),
             initializer.type_(), 
             initializer.location(),
@@ -527,7 +532,7 @@ impl SemanticAnalyzer {
         let mut typed_module = TypedModule{ statements };
 
         // solve constraints
-        self.unresolved_constraints.solve_constraints(self.type_env.substitution_mut())?;
+        self.unresolved_constraints.solve_constraints(&mut self.type_env)?;
 
         // fully resolve types
         let _ = typed_module.for_each_expression(|expr| {

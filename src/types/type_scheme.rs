@@ -55,7 +55,7 @@ impl TypeScheme {
         Self::new(function_type, bounds)
     }
 
-    pub fn instantiate(&self, env: &TypeEnvironment) -> (Type, HashSet<TraitBound>) {
+    pub fn instantiate(&self, env: &mut TypeEnvironment) -> (Type, HashSet<TraitBound>) {
         // first instantiate the type
         let (ty, mapping) = env.instantiate(self.type_);
   

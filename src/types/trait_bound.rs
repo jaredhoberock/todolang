@@ -4,7 +4,7 @@ use crate::source_location::SourceSpan;
 use derive_more::Display;
 use miette::Diagnostic;
 use std::hash::{Hash, Hasher};
-use super::{Kind, Substitution, Type, TypeEnvironment, TypeVar};
+use super::{ImplEnvironment, Kind, Substitution, Type, TypeEnvironment, TypeVar};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Display)]
@@ -69,16 +69,17 @@ impl TraitBound {
         Self::new(new_tv, self.trait_.clone(), self.provenance.clone())
     }
 
-    pub fn try_solve(&self, mapping: &mut Substitution) -> Option<bool> {
+    pub fn try_solve(&self, impl_env: &ImplEnvironment, mapping: &Substitution) -> Option<bool> {
         let type_ = self.type_var.apply(mapping);
-        match (&*type_, self.trait_.lexeme.as_str()) {
-            (Kind::Number, "Add") => Some(true),
-            (Kind::InferenceVariable(_), _) => None,
-            _ => Some(false),
+        if type_.is_concrete() {
+            let trait_name = self.trait_.lexeme.as_str();
+            Some(impl_env.has_impl(trait_name.to_string(), type_))
+        } else {
+            None
         }
     }
 
-    pub fn into_error(self, mapping: &mut Substitution) -> TraitBoundError {
+    pub fn into_error(self, mapping: &Substitution) -> TraitBoundError {
         let failing_type = self.type_var.apply(mapping);
 
         match self.provenance {
