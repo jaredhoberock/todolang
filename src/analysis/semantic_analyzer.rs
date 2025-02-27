@@ -12,7 +12,7 @@ use crate::ast::iterators::*;
 use crate::source_location::SourceSpan;
 use crate::token::Token;
 use crate::types::{TraitBound, TypeEnvironment, TypeScheme};
-use super::constraint_set::{ConstraintSet, ConstraintWithProvenance};
+use super::constraint_set::ConstraintSet;
 use super::environment::Environment;
 use super::errors::*;
 
@@ -277,9 +277,10 @@ impl SemanticAnalyzer {
 
         // add constraints to the environment
         for bound in bounds {
-            let constraint = crate::types::Constraint::new_trait_bound(bound);
-            let annotated = ConstraintWithProvenance::new_var_use(constraint, expr.clone());
-            self.unresolved_constraints.add_constraint(self.type_env.substitution_mut(), annotated)?;
+            self.unresolved_constraints.add_trait_bound_constraint(
+                self.type_env.substitution_mut(),
+                bound, 
+                expr.clone())?;
         }
 
         Ok(expr)

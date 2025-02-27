@@ -3,8 +3,8 @@ use crate::source_location::SourceSpan;
 use crate::types::Error as UnifyError;
 use crate::types::Type;
 use miette::Diagnostic;
-use super::environment::Error as NameError;
 use super::constraint_set::Error as ConstraintError;
+use super::environment::Error as NameError;
 use thiserror::Error;
 
 #[derive(Debug, Error, Diagnostic)]

@@ -1,4 +1,4 @@
-mod constraint_set;
+mod constraints;
 mod environment;
 mod errors;
 mod semantic_analyzer;
